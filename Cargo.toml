@@ -1,0 +1,37 @@
+[package]
+name = "alice-api"
+version = "0.1.0"
+edition = "2021"
+authors = ["Moroya Sakamoto"]
+description = "High-performance API Gateway with Distributed Rate Limiting and Zero-Copy Routing"
+license = "AGPL-3.0"
+repository = "https://github.com/anthropics/alice-api"
+keywords = ["api-gateway", "rate-limiting", "gcra", "zero-copy"]
+categories = ["network-programming", "web-programming"]
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+# For zero-copy syscalls (splice, sendfile)
+libc = "0.2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "api_bench"
+harness = false
+
+[[example]]
+name = "rate_limiter"
+
+[[example]]
+name = "fair_queue"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
