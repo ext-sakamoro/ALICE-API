@@ -261,7 +261,7 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
     fn hash_to_queue(&self, flow_hash: u64) -> usize {
         let mut hasher = SfqHasher::new(self.hash_seed);
         hasher.write(&flow_hash.to_le_bytes());
-        (hasher.finish() as usize) % QUEUES
+        (hasher.finish() as usize) & (QUEUES - 1)
     }
 
     /// Enqueue a request
@@ -295,7 +295,7 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
             if queue.is_empty() {
                 // Skip empty queues, reset deficit
                 queue.deficit = 0;
-                self.current = (self.current + 1) % QUEUES;
+                self.current = (self.current + 1) & (QUEUES - 1);
                 continue;
             }
 
@@ -313,7 +313,7 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
                     // Move to next queue for next dequeue
                     if queue.is_empty() {
                         queue.deficit = 0;
-                        self.current = (self.current + 1) % QUEUES;
+                        self.current = (self.current + 1) & (QUEUES - 1);
                     }
 
                     return Some(req);
@@ -321,18 +321,18 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
             }
 
             // Couldn't send from this queue, try next
-            self.current = (self.current + 1) % QUEUES;
+            self.current = (self.current + 1) & (QUEUES - 1);
         }
 
         // All queues either empty or insufficient deficit
         // Force dequeue from first non-empty queue
         for i in 0..QUEUES {
-            let idx = (self.current + i) % QUEUES;
+            let idx = (self.current + i) & (QUEUES - 1);
             if !self.queues[idx].is_empty() {
                 let req = self.queues[idx].pop().unwrap();
                 self.total_len -= 1;
                 self.stats_dequeued += 1;
-                self.current = (idx + 1) % QUEUES;
+                self.current = (idx + 1) & (QUEUES - 1);
                 return Some(req);
             }
         }
@@ -508,7 +508,7 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
     #[inline]
     fn shard_index(&self, flow_hash: u64) -> usize {
         // Use upper bits for shard selection (lower bits used for queue selection)
-        ((flow_hash >> 32) as usize) % SHARDS
+        ((flow_hash >> 32) as usize) & (SHARDS - 1)
     }
 
     /// Enqueue a request to the appropriate shard
