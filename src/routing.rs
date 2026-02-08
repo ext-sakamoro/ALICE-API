@@ -252,13 +252,13 @@ impl SplicePipe {
     }
 
     /// Get read fd
-    #[inline]
+    #[inline(always)]
     pub fn read_fd(&self) -> c_int {
         self.read_fd
     }
 
     /// Get write fd
-    #[inline]
+    #[inline(always)]
     pub fn write_fd(&self) -> c_int {
         self.write_fd
     }

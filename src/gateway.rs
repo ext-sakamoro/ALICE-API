@@ -209,6 +209,10 @@ pub enum GatewayDecision {
     MethodNotAllowed,
     /// Request too large
     PayloadTooLarge,
+    /// Authentication failed (Ed25519 signature invalid)
+    Unauthorized,
+    /// Body decryption failed (XChaCha20-Poly1305)
+    DecryptFailed,
     /// Internal error
     InternalError,
 }
@@ -224,10 +228,12 @@ impl FnvHash {
     const OFFSET: u64 = 0xcbf29ce484222325;
     const PRIME: u64 = 0x100000001b3;
 
+    #[inline(always)]
     fn new() -> Self {
         Self(Self::OFFSET)
     }
 
+    #[inline(always)]
     fn write(&mut self, bytes: &[u8]) {
         for &b in bytes {
             self.0 ^= b as u64;
@@ -235,6 +241,7 @@ impl FnvHash {
         }
     }
 
+    #[inline(always)]
     fn finish(&self) -> u64 {
         // Avalanche mixer
         let mut h = self.0;
@@ -358,6 +365,7 @@ impl<
     }
 
     /// Hash client identifier (IP, API key, etc.)
+    #[inline(always)]
     pub fn hash_client(identifier: &[u8]) -> u64 {
         let mut h = FnvHash::new();
         h.write(identifier);

@@ -45,14 +45,14 @@ impl SfqHasher {
     const FNV_OFFSET: u64 = 0xcbf29ce484222325;
     const FNV_PRIME: u64 = 0x100000001b3;
 
-    #[inline]
+    #[inline(always)]
     fn new(seed: u64) -> Self {
         Self {
             state: Self::FNV_OFFSET ^ seed,
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn mix(mut h: u64) -> u64 {
         h ^= h >> 33;
         h = h.wrapping_mul(0xff51afd7ed558ccd);
@@ -64,7 +64,7 @@ impl SfqHasher {
 }
 
 impl Hasher for SfqHasher {
-    #[inline]
+    #[inline(always)]
     fn write(&mut self, bytes: &[u8]) {
         for &byte in bytes {
             self.state ^= byte as u64;
@@ -72,7 +72,7 @@ impl Hasher for SfqHasher {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn finish(&self) -> u64 {
         Self::mix(self.state)
     }
@@ -145,12 +145,12 @@ impl<const DEPTH: usize> FlowQueue<DEPTH> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    #[inline]
+    #[inline(always)]
     fn is_full(&self) -> bool {
         self.len >= DEPTH
     }
@@ -180,6 +180,7 @@ impl<const DEPTH: usize> FlowQueue<DEPTH> {
         req
     }
 
+    #[inline(always)]
     fn peek(&self) -> Option<&QueuedRequest> {
         if self.is_empty() {
             None
@@ -257,7 +258,7 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
     }
 
     /// Hash flow ID to queue index
-    #[inline]
+    #[inline(always)]
     fn hash_to_queue(&self, flow_hash: u64) -> usize {
         let mut hasher = SfqHasher::new(self.hash_seed);
         hasher.write(&flow_hash.to_le_bytes());
@@ -505,7 +506,7 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
     }
 
     /// Get shard index from flow hash
-    #[inline]
+    #[inline(always)]
     fn shard_index(&self, flow_hash: u64) -> usize {
         // Use upper bits for shard selection (lower bits used for queue selection)
         ((flow_hash >> 32) as usize) & (SHARDS - 1)

@@ -110,6 +110,8 @@ pub mod gcra;
 pub mod sfq;
 pub mod routing;
 pub mod gateway;
+#[cfg(any(feature = "auth", feature = "crypto"))]
+pub mod middleware;
 
 /// Prelude for convenient imports
 pub mod prelude {
@@ -126,6 +128,18 @@ pub mod prelude {
     pub use crate::gateway::{
         Gateway, GatewayConfig, GatewayDecision, GatewayRequest, GatewayStats,
         Backend, Route, DefaultGateway, EdgeGateway, TestGateway,
+    };
+
+    #[cfg(feature = "auth")]
+    pub use crate::middleware::{AuthContext, AliceId, AliceSig};
+
+    #[cfg(feature = "crypto")]
+    pub use crate::middleware::{decrypt_body, decrypt_body_aead, Key, Nonce, CipherError, TAG_SIZE};
+
+    #[cfg(all(feature = "auth", feature = "crypto"))]
+    pub use crate::middleware::{
+        SecureGateway, SecureStats,
+        DefaultSecureGateway, EdgeSecureGateway, TestSecureGateway,
     };
 }
 

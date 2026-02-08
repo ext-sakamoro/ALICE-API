@@ -1,6 +1,6 @@
 # ALICE-API
 
-**High-Performance API Gateway with Distributed Rate Limiting** - v0.2.0
+**High-Performance API Gateway with Distributed Rate Limiting** - v0.2.0 (Secure API Stack)
 
 > "Fairness is not a bug, it's a feature."
 
@@ -13,6 +13,8 @@ A Rust library providing the core components for building an API gateway with ma
 | **GCRA Rate Limiting** | Lock-free, CRDT-mergeable rate limiting | O(1) per check | O(1) per key |
 | **Stochastic Fair Queuing** | Cache-line sharded with Deficit Round Robin | O(1) enqueue/dequeue | O(Q×D) |
 | **Zero-Copy Routing** | Batched splice/sendfile for body forwarding | O(n) bytes | 0 userspace copies |
+| **Ed25519 Auth** | ZKP signature verification (optional `auth` feature) | O(1) per verify | 96 bytes/ctx |
+| **XChaCha20 Decrypt** | In-place AEAD decryption (optional `crypto` feature) | O(n) bytes | 0 allocation |
 
 ## Performance Optimizations
 
@@ -367,6 +369,18 @@ match decision {
 | `Backend` | Backend server definition |
 | `Route` | Routing rule with path matching |
 
+### `middleware` - Secure API Stack (feature-gated)
+
+| Type | Feature | Description |
+|------|---------|-------------|
+| `AuthContext` | `auth` | Ed25519 public key + signature pair |
+| `decrypt_body` | `crypto` | Zero-alloc in-place XChaCha20 decryption |
+| `decrypt_body_aead` | `crypto` | In-place decryption with associated data |
+| `SecureGateway<...>` | `secure` | Full pipeline: rate limit → auth → crypto → forward |
+| `DefaultSecureGateway` | `secure` | Pre-configured secure gateway |
+| `EdgeSecureGateway` | `secure` | Lightweight secure gateway |
+| `SecureStats` | `secure` | Auth/crypto failure counters |
+
 ## Performance Characteristics
 
 | Operation | Time | Space | Notes |
@@ -436,11 +450,15 @@ With S shards on S-core system:
 # Standard build
 cargo build --release
 
+# With secure stack (auth + crypto)
+cargo build --release --features secure
+
 # no_std build (for embedded)
 cargo build --release --no-default-features
 
 # Run tests
-cargo test
+cargo test --lib
+cargo test --lib --features secure    # Full test suite (36 tests)
 
 # Benchmarks (coming soon)
 cargo bench
@@ -459,9 +477,118 @@ cargo bench
 | Cache-line sharding | Yes | No | No | No |
 | Batched I/O | Yes | No | No | No |
 
+## Secure API Stack (Optional)
+
+ALICE-API integrates with [ALICE-Auth](../ALICE-Auth) and [ALICE-Crypto](../ALICE-Crypto) via optional feature flags to create an end-to-end secure gateway pipeline.
+
+```
+Client Request → GCRA Rate Limit → Ed25519 Auth → XChaCha20 Decrypt → Backend
+```
+
+### Feature Flags
+
+```toml
+[dependencies]
+alice-api = { version = "0.1" }                           # Core only
+alice-api = { version = "0.1", features = ["auth"] }      # + Ed25519 ZKP auth
+alice-api = { version = "0.1", features = ["crypto"] }    # + XChaCha20-Poly1305
+alice-api = { version = "0.1", features = ["secure"] }    # Both (full stack)
+```
+
+| Feature | Adds | Test Count |
+|---------|------|------------|
+| (default) | GCRA + SFQ + Zero-Copy | 26 |
+| `auth` | + Ed25519 signature verification | 29 |
+| `crypto` | + XChaCha20-Poly1305 decryption | 29 |
+| `secure` | Both auth + crypto + SecureGateway | 36 |
+
+### SecureGateway
+
+`SecureGateway` wraps the base `Gateway` and inserts auth/crypto verification into the pipeline:
+
+```rust
+use alice_api::prelude::*;
+use alice_api::routing::HttpMethod;
+
+// Create secure gateway
+let mut gw = DefaultSecureGateway::new(GatewayConfig::default());
+gw.add_backend(Backend::new(1, b"10.0.0.1", 8080));
+let mut route = Route::new(b"/api/");
+route.add_backend(1);
+gw.add_route(route);
+
+// Client: generate identity + sign request
+let identity = alice_auth::Identity::gen().unwrap();
+let sign_msg = b"GET /api/users";
+let auth = AuthContext {
+    id: identity.id(),
+    sig: identity.sign(sign_msg),
+};
+
+// Process: rate limit → auth verify → forward
+let decision = gw.process(&request, &auth, sign_msg);
+match decision {
+    GatewayDecision::Forward { backend_id } => { /* forward */ }
+    GatewayDecision::Unauthorized => { /* 401 */ }
+    GatewayDecision::RateLimited { .. } => { /* 429 */ }
+    _ => {}
+}
+```
+
+### Encrypted Pipeline
+
+```rust
+// Process with body decryption: rate limit → auth → decrypt → forward
+let key = Key::generate().unwrap();
+let nonce = Nonce::generate().unwrap();
+
+let (decision, plaintext_len) = gw.process_encrypted(
+    &request, &auth, sign_msg, &key, &nonce, &mut body,
+);
+match decision {
+    GatewayDecision::Forward { .. } => {
+        // body[..plaintext_len.unwrap()] contains decrypted data
+    }
+    GatewayDecision::DecryptFailed => { /* 400 */ }
+    _ => {}
+}
+```
+
+### Type Aliases
+
+| Type | RATE_SLOTS | SFQ_QUEUES | SFQ_DEPTH | MAX_ROUTES | MAX_BACKENDS |
+|------|------------|------------|-----------|------------|--------------|
+| `DefaultSecureGateway` | 1024 | 32 | 64 | 64 | 16 |
+| `EdgeSecureGateway` | 256 | 16 | 32 | 16 | 8 |
+| `TestSecureGateway` | 64 | 8 | 16 | 8 | 4 |
+
+### Auth-Only Usage
+
+```rust
+use alice_api::middleware::AuthContext;
+
+let ctx = AuthContext::new(public_key_bytes, signature_bytes);
+if ctx.verify(b"GET /api/users") {
+    // authenticated
+}
+```
+
+### Crypto-Only Usage
+
+```rust
+use alice_api::middleware::{decrypt_body, decrypt_body_aead, Key, Nonce};
+
+// Zero-allocation in-place decryption
+let pt_len = decrypt_body(&key, &nonce, &mut buffer)?;
+
+// With associated data (binds ciphertext to request metadata)
+let pt_len = decrypt_body_aead(&key, &nonce, &mut buffer, b"POST /api/data")?;
+```
+
 ## Use Cases
 
 - **Microservices Gateway**: Route and rate-limit internal traffic
+- **Secure API Gateway**: End-to-end Ed25519 + XChaCha20 pipeline
 - **Edge Proxy**: Low-latency termination with fairness
 - **API Protection**: Prevent abuse without external dependencies
 - **IoT Gateway**: Embedded deployment with minimal footprint

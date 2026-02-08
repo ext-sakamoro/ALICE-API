@@ -35,7 +35,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 /// Returns the previous value.
 ///
 /// This is safe for monotonically increasing values like TAT.
-#[inline]
+#[inline(always)]
 fn fetch_max_relaxed(atom: &AtomicU64, new_value: u64) -> u64 {
     let mut current = atom.load(Ordering::Relaxed);
     loop {
@@ -191,7 +191,7 @@ impl GcraCell {
     }
 
     /// Get current TAT (for debugging/monitoring)
-    #[inline]
+    #[inline(always)]
     pub fn tat(&self) -> u64 {
         self.tat.load(Ordering::Relaxed)
     }
@@ -210,7 +210,7 @@ impl GcraCell {
     }
 
     /// Reset the cell (allow burst again)
-    #[inline]
+    #[inline(always)]
     pub fn reset(&self) {
         self.tat.store(0, Ordering::Relaxed);
     }

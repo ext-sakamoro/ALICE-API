@@ -12,10 +12,17 @@ categories = ["network-programming", "web-programming"]
 [features]
 default = ["std"]
 std = []
+auth = ["dep:alice-auth"]
+crypto = ["dep:alice-crypto"]
+secure = ["auth", "crypto"]
 
 [dependencies]
 # For zero-copy syscalls (splice, sendfile)
 libc = "0.2"
+# Optional: Ed25519 ZKP authentication
+alice-auth = { path = "../ALICE-Auth", optional = true, default-features = false, features = ["std"] }
+# Optional: XChaCha20-Poly1305 encryption
+alice-crypto = { path = "../ALICE-Crypto", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 criterion = "0.5"
