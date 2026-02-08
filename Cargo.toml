@@ -15,6 +15,8 @@ std = []
 auth = ["dep:alice-auth"]
 crypto = ["dep:alice-crypto"]
 secure = ["auth", "crypto"]
+queue = ["dep:alice-queue", "std"]          # ALICE-Queue message queueing
+analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics API metrics
 
 [dependencies]
 # For zero-copy syscalls (splice, sendfile)
@@ -23,6 +25,10 @@ libc = "0.2"
 alice-auth = { path = "../ALICE-Auth", optional = true, default-features = false, features = ["std"] }
 # Optional: XChaCha20-Poly1305 encryption
 alice-crypto = { path = "../ALICE-Crypto", optional = true, default-features = false, features = ["std"] }
+# Optional: Message queueing
+alice-queue = { path = "../ALICE-Queue", optional = true }
+# Optional: API metrics collection
+alice-analytics = { path = "../ALICE-Analytics", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 criterion = "0.5"

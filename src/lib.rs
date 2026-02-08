@@ -112,6 +112,10 @@ pub mod routing;
 pub mod gateway;
 #[cfg(any(feature = "auth", feature = "crypto"))]
 pub mod middleware;
+#[cfg(feature = "queue")]
+pub mod queue_bridge;
+#[cfg(feature = "analytics")]
+pub mod analytics_bridge;
 
 /// Prelude for convenient imports
 pub mod prelude {
