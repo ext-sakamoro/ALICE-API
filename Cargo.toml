@@ -8,6 +8,7 @@ license = "AGPL-3.0"
 repository = "https://github.com/anthropics/alice-api"
 keywords = ["api-gateway", "rate-limiting", "gcra", "zero-copy"]
 categories = ["network-programming", "web-programming"]
+publish = false
 
 [features]
 default = ["std"]
