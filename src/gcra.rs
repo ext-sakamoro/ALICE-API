@@ -136,7 +136,7 @@ impl GcraCell {
     ///    else: deny
     ///
     /// Uses Relaxed atomics for performance - safe because TAT is monotonically increasing.
-    #[inline]
+    #[inline(always)]
     pub fn check(&self, now_ns: u64) -> GcraDecision {
         loop {
             // Relaxed load is safe: TAT only increases, so stale reads
@@ -182,7 +182,7 @@ impl GcraCell {
     }
 
     /// Check without updating state (peek)
-    #[inline]
+    #[inline(always)]
     pub fn would_allow(&self, now_ns: u64) -> bool {
         let tat = self.tat.load(Ordering::Relaxed);
         let new_tat = tat.max(now_ns).saturating_add(self.emission_interval);
@@ -204,7 +204,7 @@ impl GcraCell {
     /// - max() ensures convergence and consistency
     ///
     /// Uses the optimized fetch_max pattern with Relaxed ordering.
-    #[inline]
+    #[inline(always)]
     pub fn merge(&self, other_tat: u64) {
         fetch_max_relaxed(&self.tat, other_tat);
     }
@@ -216,7 +216,7 @@ impl GcraCell {
     }
 
     /// Get rate limit parameters
-    #[inline]
+    #[inline(always)]
     pub fn params(&self) -> (u64, u64) {
         (self.emission_interval, self.burst_tolerance)
     }

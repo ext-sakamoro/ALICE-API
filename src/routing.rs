@@ -452,7 +452,7 @@ impl<const MAX_OPS: usize> BatchedForwarder<MAX_OPS> {
     /// Queue a splice operation
     ///
     /// Returns false if batch is full
-    #[inline]
+    #[inline(always)]
     pub fn push(&mut self, op: SpliceOp) -> bool {
         if self.count >= MAX_OPS {
             return false;
@@ -463,13 +463,13 @@ impl<const MAX_OPS: usize> BatchedForwarder<MAX_OPS> {
     }
 
     /// Get number of pending operations
-    #[inline]
+    #[inline(always)]
     pub fn pending(&self) -> usize {
         self.count
     }
 
     /// Check if batch is full
-    #[inline]
+    #[inline(always)]
     pub fn is_full(&self) -> bool {
         self.count >= MAX_OPS
     }

@@ -155,7 +155,7 @@ impl<const DEPTH: usize> FlowQueue<DEPTH> {
         self.len >= DEPTH
     }
 
-    #[inline]
+    #[inline(always)]
     fn len(&self) -> usize {
         self.len
     }
@@ -342,13 +342,13 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
     }
 
     /// Check if queue is empty
-    #[inline]
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.total_len == 0
     }
 
     /// Get total number of queued requests
-    #[inline]
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.total_len
     }

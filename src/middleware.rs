@@ -46,7 +46,7 @@ pub struct AuthContext {
 #[cfg(feature = "auth")]
 impl AuthContext {
     /// Create from raw byte arrays
-    #[inline]
+    #[inline(always)]
     pub fn new(id: [u8; 32], sig: [u8; 64]) -> Self {
         Self {
             id: AliceId::new(id),
@@ -57,7 +57,7 @@ impl AuthContext {
     /// Verify the signature against the given message.
     ///
     /// The message should match what the client signed (typically method + path).
-    #[inline]
+    #[inline(always)]
     pub fn verify(&self, message: &[u8]) -> bool {
         alice_auth::ok(&self.id, message, &self.sig)
     }
@@ -76,7 +76,7 @@ pub use alice_crypto::stream::{CipherError, Key, Nonce, TAG_SIZE};
 /// Buffer must contain `[ciphertext][16-byte Poly1305 auth tag]`.
 /// Returns plaintext length on success.
 #[cfg(feature = "crypto")]
-#[inline]
+#[inline(always)]
 pub fn decrypt_body(key: &Key, nonce: &Nonce, buffer: &mut [u8]) -> Result<usize, CipherError> {
     alice_crypto::decrypt_in_place(key, nonce, buffer)
 }
@@ -86,7 +86,7 @@ pub fn decrypt_body(key: &Key, nonce: &Nonce, buffer: &mut [u8]) -> Result<usize
 /// AAD is authenticated but not encrypted — use for binding
 /// ciphertext to request metadata (path, method, etc.).
 #[cfg(feature = "crypto")]
-#[inline]
+#[inline(always)]
 pub fn decrypt_body_aead(
     key: &Key,
     nonce: &Nonce,

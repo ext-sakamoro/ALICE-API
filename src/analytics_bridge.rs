@@ -35,6 +35,7 @@ impl ApiMetrics {
     }
 
     /// Record a successful API request.
+    #[inline(always)]
     pub fn record_request(&mut self, client_hash: u64, endpoint: &[u8], latency_us: f64) {
         self.unique_clients.insert(&client_hash);
         self.latency.insert(latency_us);
@@ -44,6 +45,7 @@ impl ApiMetrics {
     }
 
     /// Record a rate-limited request.
+    #[inline(always)]
     pub fn record_rate_limit(&mut self, client_hash: u64) {
         self.unique_clients.insert(&client_hash);
         self.rate_limited += 1;
@@ -51,18 +53,30 @@ impl ApiMetrics {
     }
 
     /// Estimated unique client count.
+    #[inline(always)]
     pub fn unique_client_count(&self) -> f64 { self.unique_clients.cardinality() }
     /// P99 latency.
+    #[inline(always)]
     pub fn p99_latency(&self) -> f64 { self.latency.quantile(0.99) }
     /// P50 latency.
+    #[inline(always)]
     pub fn p50_latency(&self) -> f64 { self.latency.quantile(0.50) }
     /// Endpoint request frequency.
+    #[inline(always)]
     pub fn endpoint_frequency(&self, endpoint: &[u8]) -> u64 { self.endpoint_freq.estimate_bytes(endpoint) }
     /// Check if a latency value is anomalous.
+    #[inline(always)]
     pub fn is_latency_anomaly(&mut self, latency_us: f64) -> bool { self.anomaly.is_anomaly(latency_us) }
     /// Rate-limit ratio.
+    #[inline(always)]
     pub fn rate_limit_ratio(&self) -> f64 {
-        if self.total == 0 { 0.0 } else { self.rate_limited as f64 / self.total as f64 }
+        if self.total == 0 {
+            0.0
+        } else {
+            // Reciprocal multiply: one division replaced by multiply
+            let inv_total = 1.0_f64 / self.total as f64;
+            self.rate_limited as f64 * inv_total
+        }
     }
 }
 
