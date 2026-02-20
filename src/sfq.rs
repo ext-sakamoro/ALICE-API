@@ -436,6 +436,7 @@ impl<const QUEUES: usize, const DEPTH: usize> WeightedSfq<QUEUES, DEPTH> {
 
     /// Dequeue with weighted deficit
     pub fn dequeue(&mut self) -> Option<QueuedRequest> {
+        log::debug!("WeightedSfq::dequeue() — weighted DRR not yet implemented, delegating to inner SFQ");
         // TODO: Implement weighted DRR
         // For now, delegate to inner
         self.inner.dequeue()
