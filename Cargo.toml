@@ -20,6 +20,8 @@ queue = ["dep:alice-queue", "std"]          # ALICE-Queue message queueing
 analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics API metrics
 
 [dependencies]
+# Logging
+log = "0.4"
 # For zero-copy syscalls (splice, sendfile)
 libc = "0.2"
 # Optional: Ed25519 ZKP authentication
