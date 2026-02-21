@@ -63,7 +63,7 @@
 //! ### Integrated Gateway
 //!
 //! ```rust
-//! use alice_api::gateway::{Gateway, GatewayConfig, Backend, Route, GatewayRequest, GatewayDecision};
+//! use alice_api::gateway::{GatewayConfig, Backend, Route, GatewayRequest, GatewayDecision};
 //! use alice_api::routing::HttpMethod;
 //!
 //! // Create gateway

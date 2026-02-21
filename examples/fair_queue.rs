@@ -23,13 +23,8 @@ fn main() {
 
     println!("Enqueuing requests:");
     for &(hash, name, size) in &flows {
-        for i in 0..5 {
-            sfq.enqueue(QueuedRequest {
-                flow_hash: hash,
-                size: size as u32,
-                request_id: (hash + i) as u32,
-                timestamp_ns: 0,
-            });
+        for i in 0..5u64 {
+            sfq.enqueue(QueuedRequest::new(hash, size, hash + i, 0));
             println!("  {} -> req {} ({} bytes)", name, i, size);
         }
     }
@@ -44,10 +39,9 @@ fn main() {
             _ => "Unknown",
         };
         println!(
-            "  [{}] flow=0x{:X} size={} bytes",
-            dequeued, req.flow_hash, req.size
+            "  [{}] flow=0x{:X} ({}) size={} bytes",
+            dequeued, req.flow_hash, name, req.size
         );
-        let _ = name;
         dequeued += 1;
     }
 
@@ -59,18 +53,13 @@ fn main() {
     let mut sharded = ShardedSfq::<4, 8, 16>::new(1024);
 
     for i in 0..20u64 {
-        sharded.enqueue(QueuedRequest {
-            flow_hash: i * 7919,
-            size: 512,
-            request_id: i as u32,
-            timestamp_ns: 0,
-        });
+        sharded.enqueue(QueuedRequest::new(i * 7919, 512, i, 0));
     }
 
     // Per-shard dequeue (zero contention)
     for shard in 0..4 {
         let mut count = 0;
-        while let Some(_) = sharded.dequeue_from_shard(shard) {
+        while sharded.dequeue_from_shard(shard).is_some() {
             count += 1;
         }
         println!("  Shard {}: {} requests", shard, count);

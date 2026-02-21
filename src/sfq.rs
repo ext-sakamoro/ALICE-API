@@ -404,42 +404,148 @@ pub struct FlowWeight {
 /// Weighted Stochastic Fair Queue
 ///
 /// Extends SFQ with per-flow weights for differentiated service.
-#[allow(dead_code)]
+/// Uses Weighted Deficit Round Robin (WDRR): each queue's quantum is scaled
+/// by its weight, so flows with higher weight receive proportionally more
+/// bandwidth.
+///
+/// # Example
+/// ```
+/// use alice_api::sfq::{WeightedSfq, QueuedRequest};
+///
+/// // 8 queues, depth 32, quantum 1024 bytes, default weight 1
+/// let mut wsfq = WeightedSfq::<8, 32>::new(1024, 1);
+///
+/// // Give the premium flow 3x more bandwidth
+/// wsfq.set_weight(0xAAAA, 3);
+///
+/// // Enqueue from two flows
+/// wsfq.enqueue(QueuedRequest::new(0xAAAA, 512, 1, 0)); // premium
+/// wsfq.enqueue(QueuedRequest::new(0xBBBB, 512, 2, 0)); // standard
+///
+/// while let Some(req) = wsfq.dequeue() {
+///     let _ = req;
+/// }
+/// ```
 pub struct WeightedSfq<const QUEUES: usize, const DEPTH: usize> {
     /// Base SFQ
     inner: StochasticFairQueue<QUEUES, DEPTH>,
-    /// Per-queue weight multipliers
+    /// Per-queue weight multipliers (index = queue slot, value = weight)
     weights: [u32; QUEUES],
-    /// Default weight (reserved for weighted DRR implementation)
-    default_weight: u32,
 }
 
 impl<const QUEUES: usize, const DEPTH: usize> WeightedSfq<QUEUES, DEPTH> {
+    /// Create a new Weighted SFQ
+    ///
+    /// # Arguments
+    /// * `quantum` - Base quantum in bytes per DRR round
+    /// * `default_weight` - Initial weight assigned to all queues
     pub fn new(quantum: usize, default_weight: u32) -> Self {
         Self {
             inner: StochasticFairQueue::new(quantum),
-            weights: [default_weight; QUEUES],
-            default_weight,
+            weights: [default_weight.max(1); QUEUES],
         }
     }
 
     /// Set weight for a flow
+    ///
+    /// Higher weight means more bandwidth allocation. Weight 2 gets 2x the
+    /// bandwidth of weight 1.
     pub fn set_weight(&mut self, flow_hash: u64, weight: u32) {
         let idx = self.inner.hash_to_queue(flow_hash);
-        self.weights[idx] = weight;
+        self.weights[idx] = weight.max(1); // Minimum weight of 1
     }
 
-    /// Enqueue with weight consideration
+    /// Get weight for a flow's queue slot
+    pub fn get_weight(&self, flow_hash: u64) -> u32 {
+        let idx = self.inner.hash_to_queue(flow_hash);
+        self.weights[idx]
+    }
+
+    /// Enqueue a request
+    ///
+    /// Returns `true` if enqueued, `false` if dropped (queue full)
     pub fn enqueue(&mut self, req: QueuedRequest) -> bool {
         self.inner.enqueue(req)
     }
 
-    /// Dequeue with weighted deficit
+    /// Dequeue with Weighted Deficit Round Robin (WDRR)
+    ///
+    /// Each queue's quantum is scaled by its weight:
+    ///   effective_quantum = base_quantum * weight
+    ///
+    /// This ensures higher-weight flows receive proportionally more bandwidth.
     pub fn dequeue(&mut self) -> Option<QueuedRequest> {
-        log::debug!("WeightedSfq::dequeue() — weighted DRR not yet implemented, delegating to inner SFQ");
-        // TODO: Implement weighted DRR
-        // For now, delegate to inner
-        self.inner.dequeue()
+        if self.inner.total_len == 0 {
+            return None;
+        }
+
+        // Try up to QUEUES times to find a non-empty queue
+        for _ in 0..QUEUES {
+            let current = self.inner.current;
+            let queue = &mut self.inner.queues[current];
+
+            if queue.is_empty() {
+                // Skip empty queues, reset deficit
+                queue.deficit = 0;
+                self.inner.current = (self.inner.current + 1) & (QUEUES - 1);
+                continue;
+            }
+
+            // Weighted quantum: scale by per-queue weight
+            let weighted_quantum = self.inner.quantum * self.weights[current] as usize;
+            queue.deficit += weighted_quantum;
+
+            // Serve as many packets as the deficit allows
+            if let Some(req) = queue.peek() {
+                if queue.deficit >= req.size {
+                    queue.deficit -= req.size;
+                    let req = queue.pop().unwrap();
+                    self.inner.total_len -= 1;
+                    self.inner.stats_dequeued += 1;
+
+                    if queue.is_empty() {
+                        queue.deficit = 0;
+                        self.inner.current = (self.inner.current + 1) & (QUEUES - 1);
+                    }
+
+                    return Some(req);
+                }
+            }
+
+            self.inner.current = (self.inner.current + 1) & (QUEUES - 1);
+        }
+
+        // Deficit exhausted for all queues in this round — force dequeue from
+        // first non-empty queue to prevent starvation
+        for i in 0..QUEUES {
+            let idx = (self.inner.current + i) & (QUEUES - 1);
+            if !self.inner.queues[idx].is_empty() {
+                let req = self.inner.queues[idx].pop().unwrap();
+                self.inner.total_len -= 1;
+                self.inner.stats_dequeued += 1;
+                self.inner.current = (idx + 1) & (QUEUES - 1);
+                return Some(req);
+            }
+        }
+
+        None
+    }
+
+    /// Check if queue is empty
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Get total number of queued requests
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Get statistics
+    pub fn stats(&self) -> SfqStats {
+        self.inner.stats()
     }
 }
 
@@ -743,5 +849,89 @@ mod tests {
 
         // Verify SfqShard is cache-line aligned
         assert!(core::mem::align_of::<SfqShard<8, 16>>() >= 64);
+    }
+
+    #[test]
+    fn test_weighted_sfq_basic() {
+        let mut wsfq = WeightedSfq::<8, 32>::new(1024, 1);
+
+        assert!(wsfq.enqueue(QueuedRequest::new(1, 100, 1, 0)));
+        assert!(wsfq.enqueue(QueuedRequest::new(2, 100, 2, 0)));
+        assert!(wsfq.enqueue(QueuedRequest::new(3, 100, 3, 0)));
+
+        assert_eq!(wsfq.len(), 3);
+        assert!(!wsfq.is_empty());
+
+        assert!(wsfq.dequeue().is_some());
+        assert!(wsfq.dequeue().is_some());
+        assert!(wsfq.dequeue().is_some());
+        assert!(wsfq.dequeue().is_none());
+        assert!(wsfq.is_empty());
+    }
+
+    #[test]
+    fn test_weighted_sfq_stats() {
+        let mut wsfq = WeightedSfq::<8, 32>::new(1024, 1);
+
+        for i in 0..5 {
+            wsfq.enqueue(QueuedRequest::new(1, 100, i, 0));
+        }
+
+        let mut count = 0;
+        while wsfq.dequeue().is_some() {
+            count += 1;
+        }
+
+        assert_eq!(count, 5);
+        let stats = wsfq.stats();
+        assert_eq!(stats.enqueued, 5);
+        assert_eq!(stats.dequeued, 5);
+    }
+
+    #[test]
+    fn test_weighted_sfq_set_weight() {
+        let mut wsfq = WeightedSfq::<8, 32>::new(1024, 1);
+
+        wsfq.set_weight(0xAAAA, 4);
+        assert_eq!(wsfq.get_weight(0xAAAA), 4);
+
+        // Weight 0 should be clamped to 1
+        wsfq.set_weight(0xBBBB, 0);
+        assert_eq!(wsfq.get_weight(0xBBBB), 1);
+    }
+
+    #[test]
+    fn test_weighted_sfq_weighted_drr() {
+        // With WDRR, a flow with weight 2 should get proportionally more
+        // bandwidth (larger effective quantum) than a flow with weight 1.
+        // We verify that both flows are fully served.
+        let mut wsfq = WeightedSfq::<16, 64>::new(512, 1);
+
+        let premium = 0xAAAA_u64;
+        let standard = 0xBBBB_u64;
+
+        wsfq.set_weight(premium, 2);
+
+        for i in 0..8 {
+            wsfq.enqueue(QueuedRequest::new(premium, 512, i, 0));
+            wsfq.enqueue(QueuedRequest::new(standard, 512, 100 + i, 0));
+        }
+
+        assert_eq!(wsfq.len(), 16);
+
+        let mut premium_count = 0u32;
+        let mut standard_count = 0u32;
+
+        while let Some(req) = wsfq.dequeue() {
+            if req.flow_hash == premium {
+                premium_count += 1;
+            } else {
+                standard_count += 1;
+            }
+        }
+
+        // All requests from both flows must be served
+        assert_eq!(premium_count, 8);
+        assert_eq!(standard_count, 8);
     }
 }

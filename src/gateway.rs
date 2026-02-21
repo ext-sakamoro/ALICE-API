@@ -354,14 +354,10 @@ impl<
 
     /// Find matching route
     fn find_route(&mut self, path: &[u8], method: HttpMethod) -> Option<&mut Route> {
-        for route in &mut self.routes[..self.route_count] {
-            if let Some(r) = route {
-                if r.matches(path, method) {
-                    return Some(r);
-                }
-            }
-        }
-        None
+        self.routes[..self.route_count]
+            .iter_mut()
+            .flatten()
+            .find(|r| r.matches(path, method))
     }
 
     /// Hash client identifier (IP, API key, etc.)
@@ -466,24 +462,20 @@ impl<
 
     /// Mark backend as unhealthy
     pub fn mark_unhealthy(&mut self, backend_id: u32) {
-        for backend in &mut self.backends {
-            if let Some(b) = backend {
-                if b.id == backend_id {
-                    b.healthy = false;
-                    break;
-                }
+        for b in self.backends.iter_mut().flatten() {
+            if b.id == backend_id {
+                b.healthy = false;
+                break;
             }
         }
     }
 
     /// Mark backend as healthy
     pub fn mark_healthy(&mut self, backend_id: u32) {
-        for backend in &mut self.backends {
-            if let Some(b) = backend {
-                if b.id == backend_id {
-                    b.healthy = true;
-                    break;
-                }
+        for b in self.backends.iter_mut().flatten() {
+            if b.id == backend_id {
+                b.healthy = true;
+                break;
             }
         }
     }
