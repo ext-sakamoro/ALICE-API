@@ -934,4 +934,201 @@ mod tests {
         assert_eq!(premium_count, 8);
         assert_eq!(standard_count, 8);
     }
+
+    #[test]
+    fn test_sfq_empty_dequeue() {
+        let mut sfq = StochasticFairQueue::<8, 16>::new(1024);
+        // Dequeue from empty queue should return None
+        assert!(sfq.dequeue().is_none());
+        assert!(sfq.is_empty());
+        assert_eq!(sfq.len(), 0);
+    }
+
+    #[test]
+    fn test_sfq_with_seed() {
+        let sfq1 = StochasticFairQueue::<8, 16>::new(1024);
+        let sfq2 = StochasticFairQueue::<8, 16>::with_seed(1024, 0xDEAD_BEEF_1234_5678);
+
+        // Different seeds should produce different queue assignments
+        let flow = 0x1234_5678_u64;
+        let q1 = sfq1.hash_to_queue(flow);
+        let q2 = sfq2.hash_to_queue(flow);
+
+        // They might happen to be the same (1/8 chance), but seeds differ
+        // We just verify with_seed sets the seed correctly
+        assert_ne!(sfq2.hash_seed, sfq1.hash_seed);
+        let _ = (q1, q2); // both are valid
+    }
+
+    #[test]
+    fn test_sfq_stats_accumulate() {
+        let mut sfq = StochasticFairQueue::<4, 4>::new(1024);
+
+        // Enqueue 4 items (fills single queue of depth 4)
+        for i in 0..4 {
+            sfq.enqueue(QueuedRequest::new(1, 100, i, 0));
+        }
+        // 5th should be dropped (queue full)
+        sfq.enqueue(QueuedRequest::new(1, 100, 99, 0));
+
+        let stats = sfq.stats();
+        assert_eq!(stats.enqueued, 4);
+        assert_eq!(stats.drops, 1);
+        assert_eq!(stats.current_len, 4);
+
+        // Dequeue all
+        while sfq.dequeue().is_some() {}
+
+        let stats = sfq.stats();
+        assert_eq!(stats.dequeued, 4);
+        assert_eq!(stats.current_len, 0);
+    }
+
+    #[test]
+    fn test_sfq_queue_lengths_iterator() {
+        let mut sfq = StochasticFairQueue::<4, 8>::new(1024);
+
+        // All queues start empty
+        let total: usize = sfq.queue_lengths().sum();
+        assert_eq!(total, 0);
+
+        sfq.enqueue(QueuedRequest::new(1, 100, 1, 0));
+        sfq.enqueue(QueuedRequest::new(2, 100, 2, 0));
+
+        // Total across all queues should match len()
+        let total: usize = sfq.queue_lengths().sum();
+        assert_eq!(total, sfq.len());
+    }
+
+    #[test]
+    fn test_queued_request_fields() {
+        let req = QueuedRequest::new(0xDEAD_BEEF, 1024, 42, 999);
+        assert_eq!(req.flow_hash, 0xDEAD_BEEF);
+        assert_eq!(req.size, 1024);
+        assert_eq!(req.id, 42);
+        assert_eq!(req.enqueue_time, 999);
+    }
+
+    #[test]
+    fn test_sfq_stats_default() {
+        let stats = SfqStats::default();
+        assert_eq!(stats.enqueued, 0);
+        assert_eq!(stats.dequeued, 0);
+        assert_eq!(stats.drops, 0);
+        assert_eq!(stats.current_len, 0);
+    }
+
+    #[test]
+    fn test_sharded_sfq_shard_mut() {
+        let mut sfq = ShardedSfq::<4, 8, 16>::new(1024);
+
+        // Access shard 0 and enqueue directly
+        if let Some(shard) = sfq.shard_mut(0) {
+            shard.enqueue(QueuedRequest::new(0xABCD, 100, 1, 0));
+        }
+        assert_eq!(sfq.len(), 1);
+
+        // Out of bounds shard returns None
+        assert!(sfq.shard_mut(999).is_none());
+    }
+
+    #[test]
+    fn test_sharded_sfq_dequeue_from_shard() {
+        let mut sfq = ShardedSfq::<4, 8, 16>::new(1024);
+
+        // Enqueue to shard 0 directly
+        if let Some(shard) = sfq.shard_mut(0) {
+            shard.enqueue(QueuedRequest::new(1, 100, 1, 0));
+        }
+
+        // Dequeue from shard 0
+        let req = sfq.dequeue_from_shard(0);
+        assert!(req.is_some());
+
+        // Out of bounds shard returns None
+        assert!(sfq.dequeue_from_shard(999).is_none());
+    }
+
+    #[test]
+    fn test_sharded_sfq_num_shards() {
+        let sfq = ShardedSfq::<4, 8, 16>::new(1024);
+        assert_eq!(sfq.num_shards(), 4);
+
+        let sfq2 = ShardedSfq::<8, 4, 8>::new(512);
+        assert_eq!(sfq2.num_shards(), 8);
+    }
+
+    #[test]
+    fn test_sharded_sfq_aggregate_stats() {
+        let mut sfq = ShardedSfq::<4, 8, 16>::new(1024);
+
+        // Enqueue 8 items spread across shards
+        for i in 0u64..8 {
+            let flow = i << 32 | i; // spread upper bits
+            sfq.enqueue(QueuedRequest::new(flow, 100, i, 0));
+        }
+
+        let stats = sfq.stats();
+        assert_eq!(stats.enqueued, 8);
+        assert_eq!(stats.current_len, 8);
+
+        while sfq.dequeue().is_some() {}
+
+        let stats = sfq.stats();
+        assert_eq!(stats.dequeued, 8);
+        assert_eq!(stats.current_len, 0);
+    }
+
+    #[test]
+    fn test_sharded_sfq_shard_stats() {
+        let sfq = ShardedSfq::<4, 8, 16>::new(1024);
+
+        // Valid shard index returns Some
+        assert!(sfq.shard_stats(0).is_some());
+        assert!(sfq.shard_stats(3).is_some());
+
+        // Invalid shard index returns None
+        assert!(sfq.shard_stats(4).is_none());
+        assert!(sfq.shard_stats(100).is_none());
+    }
+
+    #[test]
+    fn test_weighted_sfq_empty_dequeue() {
+        let mut wsfq = WeightedSfq::<8, 16>::new(1024, 1);
+        assert!(wsfq.dequeue().is_none());
+        assert!(wsfq.is_empty());
+        assert_eq!(wsfq.len(), 0);
+    }
+
+    #[test]
+    fn test_fnv_hasher_determinism() {
+        // Two hashers with same seed should produce the same output
+        let mut h1 = SfqHasher::new(0x1234);
+        let mut h2 = SfqHasher::new(0x1234);
+
+        h1.write(&[1, 2, 3, 4, 5]);
+        h2.write(&[1, 2, 3, 4, 5]);
+
+        assert_eq!(h1.finish(), h2.finish());
+    }
+
+    #[test]
+    fn test_fnv_hasher_nonzero() {
+        // Hash of non-empty input should be nonzero
+        let mut h = SfqHasher::new(SfqHasher::FNV_OFFSET);
+        h.write(&[0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_ne!(h.finish(), 0);
+    }
+
+    #[test]
+    fn test_fnv_hasher_different_seeds() {
+        // Different seeds produce different hashes for same data
+        let mut h1 = SfqHasher::new(0);
+        let mut h2 = SfqHasher::new(0xFFFF_FFFF_FFFF_FFFFu64);
+
+        h1.write(&[1, 2, 3]);
+        h2.write(&[1, 2, 3]);
+
+        assert_ne!(h1.finish(), h2.finish());
+    }
 }

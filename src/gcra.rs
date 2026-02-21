@@ -486,4 +486,224 @@ mod tests {
             _ => panic!("Expected Deny"),
         }
     }
+
+    #[test]
+    fn test_gcra_with_params() {
+        // 10 req/s = 100ms interval, burst of 3 = 300ms tolerance
+        let emission_interval = NANOS_PER_SEC / 10;
+        let burst_tolerance = emission_interval * 3;
+        let cell = GcraCell::with_params(emission_interval, burst_tolerance);
+
+        let (ei, bt) = cell.params();
+        assert_eq!(ei, emission_interval);
+        assert_eq!(bt, burst_tolerance);
+
+        // Should allow burst of 3
+        for _ in 0..3 {
+            assert!(matches!(cell.check(0), GcraDecision::Allow { .. }));
+        }
+        // 4th at t=0 should be denied
+        assert!(matches!(cell.check(0), GcraDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn test_gcra_reset() {
+        let cell = GcraCell::new(2.0, 2);
+
+        // Exhaust burst
+        cell.check(0);
+        cell.check(0);
+        assert!(matches!(cell.check(0), GcraDecision::Deny { .. }));
+
+        // Reset - should allow again
+        cell.reset();
+        assert_eq!(cell.tat(), 0);
+        assert!(matches!(cell.check(0), GcraDecision::Allow { .. }));
+    }
+
+    #[test]
+    fn test_gcra_would_allow() {
+        let cell = GcraCell::new(10.0, 2);
+
+        // Fresh cell should allow
+        assert!(cell.would_allow(0));
+
+        // Exhaust burst (2 requests)
+        cell.check(0);
+        cell.check(0);
+
+        // would_allow should return false at t=0
+        assert!(!cell.would_allow(0));
+
+        // At a future time it should allow
+        let interval = NANOS_PER_SEC / 10;
+        assert!(cell.would_allow(interval * 10));
+    }
+
+    #[test]
+    fn test_gcra_merge_idempotent() {
+        let cell = GcraCell::new(10.0, 5);
+        for _ in 0..3 {
+            cell.check(0);
+        }
+        let tat = cell.tat();
+
+        // Merging same TAT or lower has no effect
+        cell.merge(tat);
+        assert_eq!(cell.tat(), tat);
+
+        cell.merge(0);
+        assert_eq!(cell.tat(), tat);
+    }
+
+    #[test]
+    fn test_gcra_merge_higher_tat() {
+        let cell = GcraCell::new(10.0, 5);
+        cell.check(0);
+        let original_tat = cell.tat();
+
+        // Merge a much higher TAT
+        let higher_tat = original_tat + NANOS_PER_SEC * 10;
+        cell.merge(higher_tat);
+        assert_eq!(cell.tat(), higher_tat);
+
+        // Cell should now deny requests at time 0
+        assert!(matches!(cell.check(0), GcraDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn test_gcra_allow_reset_after_ns() {
+        let cell = GcraCell::new(1.0, 5); // 1 req/s, burst 5
+
+        // First request: reset_after_ns should be emission_interval (1 second)
+        match cell.check(0) {
+            GcraDecision::Allow { reset_after_ns } => {
+                assert!(reset_after_ns > 0);
+                assert!(reset_after_ns <= NANOS_PER_SEC);
+            }
+            _ => panic!("Expected Allow"),
+        }
+    }
+
+    #[test]
+    fn test_gcra_registry_lru_eviction() {
+        // Create a tiny registry that will force eviction
+        let mut registry = GcraRegistry::<4>::new(100.0, 10);
+
+        // Fill all 4 slots
+        for i in 0..4u64 {
+            registry.check(i * 100, 0);
+        }
+        assert_eq!(registry.count(), 4);
+
+        // Adding a 5th key should evict the LRU
+        registry.check(9999, 1_000_000_000);
+        // Count stays at capacity (eviction replaces, doesn't add)
+        assert_eq!(registry.count(), 4);
+    }
+
+    #[test]
+    fn test_gcra_registry_same_key_reuse() {
+        let mut registry = GcraRegistry::<16>::new(5.0, 3);
+
+        let key = 0xDEADBEEFu64;
+
+        // First check creates the entry
+        assert!(matches!(registry.check(key, 0), GcraDecision::Allow { .. }));
+        assert_eq!(registry.count(), 1);
+
+        // Second check reuses same entry
+        assert!(matches!(registry.check(key, 0), GcraDecision::Allow { .. }));
+        assert_eq!(registry.count(), 1); // Count unchanged
+    }
+
+    #[test]
+    fn test_gcra_registry_merge() {
+        let mut registry = GcraRegistry::<16>::new(10.0, 5);
+
+        let key = 0xABCD1234u64;
+
+        // First request creates entry
+        registry.check(key, 0);
+        let initial_tat = {
+            registry.export_tats().find(|(k, _)| *k == key).map(|(_, t)| t).unwrap_or(0)
+        };
+
+        // Merge a higher TAT from another node
+        let high_tat = initial_tat + NANOS_PER_SEC * 5;
+        registry.merge(key, high_tat, 0);
+
+        // After merge, key's TAT should be the higher value
+        let merged_tat = {
+            registry.export_tats().find(|(k, _)| *k == key).map(|(_, t)| t).unwrap_or(0)
+        };
+        assert_eq!(merged_tat, high_tat);
+    }
+
+    #[test]
+    fn test_gcra_registry_export_tats() {
+        let mut registry = GcraRegistry::<16>::new(100.0, 10);
+
+        registry.check(111, 0);
+        registry.check(222, 0);
+        registry.check(333, 0);
+
+        let tats: Vec<_> = registry.export_tats().collect();
+        assert_eq!(tats.len(), 3);
+
+        // All TATs should be non-zero (we consumed at least one token)
+        for (_, tat) in &tats {
+            assert!(*tat > 0);
+        }
+    }
+
+    #[test]
+    fn test_gcra_high_rate() {
+        // 1,000,000 req/s — emission_interval = 1000ns
+        let cell = GcraCell::new(1_000_000.0, 10);
+        let (ei, _) = cell.params();
+        assert!(ei > 0);
+        assert!(ei < 10_000); // Should be microsecond scale
+
+        // Burst of 10 should be allowed at t=0
+        for _ in 0..10 {
+            assert!(matches!(cell.check(0), GcraDecision::Allow { .. }));
+        }
+        assert!(matches!(cell.check(0), GcraDecision::Deny { .. }));
+    }
+
+    #[test]
+    fn test_gcra_decision_equality() {
+        // GcraDecision derives PartialEq
+        let allow1 = GcraDecision::Allow { reset_after_ns: 100 };
+        let allow2 = GcraDecision::Allow { reset_after_ns: 100 };
+        let allow3 = GcraDecision::Allow { reset_after_ns: 999 };
+        let deny1  = GcraDecision::Deny  { retry_after_ns: 50 };
+        let deny2  = GcraDecision::Deny  { retry_after_ns: 50 };
+
+        assert_eq!(allow1, allow2);
+        assert_ne!(allow1, allow3);
+        assert_eq!(deny1, deny2);
+        assert_ne!(allow1, deny1);
+    }
+
+    #[test]
+    fn test_fetch_max_relaxed_monotonic() {
+        use core::sync::atomic::{AtomicU64, Ordering};
+        let atom = AtomicU64::new(100);
+
+        // Lower value: no update
+        let prev = fetch_max_relaxed(&atom, 50);
+        assert_eq!(prev, 100);
+        assert_eq!(atom.load(Ordering::Relaxed), 100);
+
+        // Higher value: updates
+        let prev = fetch_max_relaxed(&atom, 200);
+        assert_eq!(prev, 100);
+        assert_eq!(atom.load(Ordering::Relaxed), 200);
+
+        // Equal value: no change
+        fetch_max_relaxed(&atom, 200);
+        assert_eq!(atom.load(Ordering::Relaxed), 200);
+    }
 }

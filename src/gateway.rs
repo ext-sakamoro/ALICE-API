@@ -633,4 +633,372 @@ mod tests {
         assert!(!route.matches(b"/api/v2/", HttpMethod::Get));
         assert!(!route.matches(b"/other", HttpMethod::Get));
     }
+
+    #[test]
+    fn test_gateway_config_default() {
+        let config = GatewayConfig::default();
+        assert_eq!(config.rate_limit, 100.0);
+        assert_eq!(config.rate_burst, 20);
+        assert_eq!(config.queue_quantum, 1500);
+        assert_eq!(config.max_body_size, 10 * 1024 * 1024);
+        assert_eq!(config.timeout_ns, 30_000_000_000);
+    }
+
+    #[test]
+    fn test_backend_new() {
+        let b = Backend::new(42, b"localhost", 9090);
+        assert_eq!(b.id, 42);
+        assert_eq!(b.host(), b"localhost");
+        assert_eq!(b.port, 9090);
+        assert_eq!(b.weight, 1);
+        assert!(b.healthy);
+    }
+
+    #[test]
+    fn test_backend_host_truncation() {
+        // Host longer than 64 bytes should be truncated
+        let long_host = [b'a'; 100];
+        let b = Backend::new(1, &long_host, 8080);
+        assert_eq!(b.host_len, 64);
+    }
+
+    #[test]
+    fn test_route_new_and_prefix() {
+        let route = Route::new(b"/healthz");
+        assert_eq!(route.path_prefix(), b"/healthz");
+        assert_eq!(route.prefix_len, 8);
+        assert_eq!(route.backend_count, 0);
+    }
+
+    #[test]
+    fn test_route_add_backend_limit() {
+        let mut route = Route::new(b"/api/");
+
+        // Can add up to 8 backends
+        for i in 1u32..=8 {
+            route.add_backend(i);
+        }
+        assert_eq!(route.backend_count, 8);
+
+        // 9th add should be silently ignored
+        route.add_backend(999);
+        assert_eq!(route.backend_count, 8);
+    }
+
+    #[test]
+    fn test_route_next_backend_round_robin() {
+        let mut route = Route::new(b"/");
+        route.add_backend(10);
+        route.add_backend(20);
+        route.add_backend(30);
+
+        // Round-robin through backends
+        assert_eq!(route.next_backend(), Some(10));
+        assert_eq!(route.next_backend(), Some(20));
+        assert_eq!(route.next_backend(), Some(30));
+        assert_eq!(route.next_backend(), Some(10)); // wraps around
+    }
+
+    #[test]
+    fn test_route_next_backend_empty() {
+        let mut route = Route::new(b"/");
+        assert_eq!(route.next_backend(), None);
+    }
+
+    #[test]
+    fn test_route_path_prefix_truncation() {
+        // Path prefix longer than 128 bytes should be truncated
+        let long_prefix = [b'/'; 200];
+        let route = Route::new(&long_prefix);
+        assert_eq!(route.prefix_len, 128);
+    }
+
+    #[test]
+    fn test_gateway_payload_too_large() {
+        let mut config = GatewayConfig::default();
+        config.max_body_size = 1024;
+
+        let mut gw = TestGateway::new(config);
+        gw.add_backend(Backend::new(1, b"localhost", 8080));
+        let mut route = Route::new(b"/");
+        route.add_backend(1);
+        gw.add_route(route);
+
+        let mut path = [0u8; 256];
+        path[0] = b'/';
+        let request = GatewayRequest {
+            client_hash: 1,
+            request_id: 1,
+            method: HttpMethod::Post,
+            path,
+            path_len: 1,
+            content_length: 2048, // exceeds 1024 limit
+            header_size: 100,
+            timestamp_ns: 0,
+        };
+
+        assert_eq!(gw.process(&request), GatewayDecision::PayloadTooLarge);
+    }
+
+    #[test]
+    fn test_gateway_unhealthy_backend() {
+        let config = GatewayConfig::default();
+        let mut gw = TestGateway::new(config);
+
+        gw.add_backend(Backend::new(1, b"localhost", 8080));
+        let mut route = Route::new(b"/");
+        route.add_backend(1);
+        gw.add_route(route);
+
+        // Mark backend unhealthy
+        gw.mark_unhealthy(1);
+
+        let mut path = [0u8; 256];
+        path[0] = b'/';
+        let request = GatewayRequest {
+            client_hash: 1,
+            request_id: 1,
+            method: HttpMethod::Get,
+            path,
+            path_len: 1,
+            content_length: 0,
+            header_size: 50,
+            timestamp_ns: 0,
+        };
+
+        // Should fail because backend is unhealthy
+        let decision = gw.process(&request);
+        assert_eq!(decision, GatewayDecision::InternalError);
+
+        // Mark healthy again
+        gw.mark_healthy(1);
+        let decision = gw.process(&request);
+        assert!(matches!(decision, GatewayDecision::Forward { backend_id: 1 }));
+    }
+
+    #[test]
+    fn test_gateway_enqueue_dequeue() {
+        let config = GatewayConfig::default();
+        let mut gw = TestGateway::new(config);
+
+        let mut path = [0u8; 256];
+        path[0] = b'/';
+        let request = GatewayRequest {
+            client_hash: 42,
+            request_id: 1,
+            method: HttpMethod::Post,
+            path,
+            path_len: 1,
+            content_length: 512,
+            header_size: 100,
+            timestamp_ns: 0,
+        };
+
+        // Enqueue
+        assert!(gw.enqueue(&request));
+        assert_eq!(gw.queue_len(), 1);
+
+        // Dequeue
+        let dequeued = gw.dequeue();
+        assert!(dequeued.is_some());
+        assert_eq!(gw.queue_len(), 0);
+
+        // Next dequeue should be None
+        assert!(gw.dequeue().is_none());
+    }
+
+    #[test]
+    fn test_gateway_stats_tracking() {
+        let config = GatewayConfig::default();
+        let mut gw = TestGateway::new(config);
+
+        gw.add_backend(Backend::new(1, b"localhost", 8080));
+        let mut route = Route::new(b"/api/");
+        route.add_backend(1);
+        gw.add_route(route);
+
+        // Request to known route
+        let mut path = [0u8; 256];
+        path[..5].copy_from_slice(b"/api/");
+        let req_fwd = GatewayRequest {
+            client_hash: 1,
+            request_id: 1,
+            method: HttpMethod::Get,
+            path,
+            path_len: 5,
+            content_length: 0,
+            header_size: 50,
+            timestamp_ns: 0,
+        };
+        gw.process(&req_fwd);
+
+        // Request to unknown route
+        let mut path2 = [0u8; 256];
+        path2[..4].copy_from_slice(b"/nop");
+        let req_404 = GatewayRequest {
+            client_hash: 2,
+            request_id: 2,
+            method: HttpMethod::Get,
+            path: path2,
+            path_len: 4,
+            content_length: 0,
+            header_size: 50,
+            timestamp_ns: 0,
+        };
+        gw.process(&req_404);
+
+        let stats = gw.stats();
+        assert_eq!(stats.requests_total, 2);
+        assert_eq!(stats.requests_forwarded, 1);
+        assert_eq!(stats.requests_not_found, 1);
+    }
+
+    #[test]
+    fn test_gateway_next_request_id_monotonic() {
+        let mut gw = TestGateway::new(GatewayConfig::default());
+        let id1 = gw.next_request_id();
+        let id2 = gw.next_request_id();
+        let id3 = gw.next_request_id();
+        assert!(id2 > id1);
+        assert!(id3 > id2);
+    }
+
+    #[test]
+    fn test_gateway_rotate_queue_seed() {
+        let mut gw = TestGateway::new(GatewayConfig::default());
+        // Rotating seed should not panic
+        gw.rotate_queue_seed(0xDEAD_BEEF_CAFE);
+    }
+
+    #[test]
+    fn test_gateway_hash_client_determinism() {
+        let h1 = TestGateway::hash_client(b"192.168.1.100");
+        let h2 = TestGateway::hash_client(b"192.168.1.100");
+        assert_eq!(h1, h2);
+        assert_ne!(h1, 0);
+    }
+
+    #[test]
+    fn test_gateway_hash_client_distinct() {
+        let h1 = TestGateway::hash_client(b"10.0.0.1");
+        let h2 = TestGateway::hash_client(b"10.0.0.2");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_gateway_decision_equality() {
+        assert_eq!(
+            GatewayDecision::Forward { backend_id: 1 },
+            GatewayDecision::Forward { backend_id: 1 },
+        );
+        assert_ne!(
+            GatewayDecision::Forward { backend_id: 1 },
+            GatewayDecision::Forward { backend_id: 2 },
+        );
+        assert_eq!(GatewayDecision::NotFound, GatewayDecision::NotFound);
+        assert_ne!(GatewayDecision::NotFound, GatewayDecision::InternalError);
+        assert_eq!(
+            GatewayDecision::RateLimited { retry_after_ns: 100 },
+            GatewayDecision::RateLimited { retry_after_ns: 100 },
+        );
+    }
+
+    #[test]
+    fn test_gateway_stats_default() {
+        let stats = GatewayStats::default();
+        assert_eq!(stats.requests_total, 0);
+        assert_eq!(stats.requests_forwarded, 0);
+        assert_eq!(stats.requests_rate_limited, 0);
+        assert_eq!(stats.requests_queued, 0);
+        assert_eq!(stats.requests_not_found, 0);
+        assert_eq!(stats.bytes_forwarded, 0);
+    }
+
+    #[test]
+    fn test_gateway_add_backend_limit() {
+        let config = GatewayConfig::default();
+        let mut gw = TestGateway::new(config); // MAX_BACKENDS = 4
+
+        // TestGateway has MAX_BACKENDS=4
+        assert!(gw.add_backend(Backend::new(1, b"a", 1)).is_some());
+        assert!(gw.add_backend(Backend::new(2, b"b", 2)).is_some());
+        assert!(gw.add_backend(Backend::new(3, b"c", 3)).is_some());
+        assert!(gw.add_backend(Backend::new(4, b"d", 4)).is_some());
+
+        // 5th backend should fail
+        assert!(gw.add_backend(Backend::new(5, b"e", 5)).is_none());
+    }
+
+    #[test]
+    fn test_gateway_add_route_limit() {
+        let config = GatewayConfig::default();
+        let mut gw = TestGateway::new(config); // MAX_ROUTES = 8
+
+        for i in 0..8 {
+            let prefix = [b'/' , b'a' + i as u8];
+            assert!(gw.add_route(Route::new(&prefix)));
+        }
+
+        // 9th route should fail
+        assert!(!gw.add_route(Route::new(b"/z")));
+    }
+
+    #[test]
+    fn test_gateway_queue_stats() {
+        let config = GatewayConfig::default();
+        let mut gw = TestGateway::new(config);
+
+        let mut path = [0u8; 256];
+        path[0] = b'/';
+        let request = GatewayRequest {
+            client_hash: 1,
+            request_id: 1,
+            method: HttpMethod::Get,
+            path,
+            path_len: 1,
+            content_length: 100,
+            header_size: 50,
+            timestamp_ns: 0,
+        };
+
+        gw.enqueue(&request);
+        let qs = gw.queue_stats();
+        assert_eq!(qs.enqueued, 1);
+    }
+
+    #[test]
+    fn test_gateway_request_path_accessor() {
+        let mut path_buf = [0u8; 256];
+        path_buf[..7].copy_from_slice(b"/health");
+
+        let request = GatewayRequest {
+            client_hash: 0,
+            request_id: 0,
+            method: HttpMethod::Get,
+            path: path_buf,
+            path_len: 7,
+            content_length: 0,
+            header_size: 0,
+            timestamp_ns: 0,
+        };
+
+        assert_eq!(request.path(), b"/health");
+    }
+
+    #[test]
+    fn test_fnv_hash_nonzero() {
+        // FnvHash of any non-empty input should produce non-zero output
+        let mut h = FnvHash::new();
+        h.write(b"test-client-ip");
+        assert_ne!(h.finish(), 0);
+    }
+
+    #[test]
+    fn test_fnv_hash_determinism() {
+        let mut h1 = FnvHash::new();
+        let mut h2 = FnvHash::new();
+        h1.write(b"192.168.0.1");
+        h2.write(b"192.168.0.1");
+        assert_eq!(h1.finish(), h2.finish());
+    }
 }

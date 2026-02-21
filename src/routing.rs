@@ -724,4 +724,202 @@ mod tests {
         assert_eq!(HttpMethod::from_bytes(b"POST"), HttpMethod::Post);
         assert_eq!(HttpMethod::from_bytes(b"INVALID"), HttpMethod::Unknown);
     }
+
+    #[test]
+    fn test_all_http_methods() {
+        assert_eq!(HttpMethod::from_bytes(b"GET"),     HttpMethod::Get);
+        assert_eq!(HttpMethod::from_bytes(b"POST"),    HttpMethod::Post);
+        assert_eq!(HttpMethod::from_bytes(b"PUT"),     HttpMethod::Put);
+        assert_eq!(HttpMethod::from_bytes(b"DELETE"),  HttpMethod::Delete);
+        assert_eq!(HttpMethod::from_bytes(b"PATCH"),   HttpMethod::Patch);
+        assert_eq!(HttpMethod::from_bytes(b"HEAD"),    HttpMethod::Head);
+        assert_eq!(HttpMethod::from_bytes(b"OPTIONS"), HttpMethod::Options);
+        assert_eq!(HttpMethod::from_bytes(b"CONNECT"), HttpMethod::Connect);
+        assert_eq!(HttpMethod::from_bytes(b"TRACE"),   HttpMethod::Trace);
+        assert_eq!(HttpMethod::from_bytes(b""),        HttpMethod::Unknown);
+        assert_eq!(HttpMethod::from_bytes(b"get"),     HttpMethod::Unknown); // case-sensitive
+    }
+
+    #[test]
+    fn test_http_method_equality() {
+        assert_eq!(HttpMethod::Get,  HttpMethod::Get);
+        assert_ne!(HttpMethod::Get,  HttpMethod::Post);
+        assert_ne!(HttpMethod::Post, HttpMethod::Put);
+    }
+
+    #[test]
+    fn test_parse_request_line_post() {
+        let buf = b"POST /submit HTTP/1.1\r\nContent-Length: 100\r\n\r\n";
+        let (req, offset) = parse_request_line(buf).unwrap();
+        assert_eq!(req.method, HttpMethod::Post);
+        assert_eq!(req.path, b"/submit");
+        assert_eq!(req.version, b"HTTP/1.1");
+        assert_eq!(offset, 21); // "POST /submit HTTP/1.1" length
+    }
+
+    #[test]
+    fn test_parse_request_line_root_path() {
+        let buf = b"GET / HTTP/1.1\r\nHost: x\r\n\r\n";
+        let (req, _) = parse_request_line(buf).unwrap();
+        assert_eq!(req.method, HttpMethod::Get);
+        assert_eq!(req.path, b"/");
+    }
+
+    #[test]
+    fn test_parse_request_line_incomplete() {
+        // No newline — incomplete request
+        let buf = b"GET /path";
+        let result = parse_request_line(buf);
+        // No \r or \n in the path portion — parse_request_line looks for \r or \n
+        // It should still parse if there's any \r/\n in the buffer
+        // Actually, "GET /path" has no \r or \n so it returns None
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_request_line_lf_only() {
+        // LF without CR is also valid for line_end detection
+        let buf = b"DELETE /resource HTTP/1.1\nHost: x\r\n\r\n";
+        let (req, offset) = parse_request_line(buf).unwrap();
+        assert_eq!(req.method, HttpMethod::Delete);
+        assert_eq!(req.path, b"/resource");
+        assert_eq!(req.version, b"HTTP/1.1");
+        assert_eq!(offset, 25); // "DELETE /resource HTTP/1.1" length
+    }
+
+    #[test]
+    fn test_find_content_length_large_value() {
+        let headers = b"Content-Length: 1048576\r\n\r\n";
+        assert_eq!(find_content_length(headers), Some(1048576));
+    }
+
+    #[test]
+    fn test_find_content_length_zero() {
+        let headers = b"Content-Length: 0\r\n\r\n";
+        assert_eq!(find_content_length(headers), Some(0));
+    }
+
+    #[test]
+    fn test_find_content_length_lowercase() {
+        // The implementation also checks lowercase "content-length:"
+        let headers = b"content-length: 512\r\n\r\n";
+        assert_eq!(find_content_length(headers), Some(512));
+    }
+
+    #[test]
+    fn test_find_content_length_with_spaces() {
+        // Leading space after colon
+        let headers = b"Content-Length:   100\r\n\r\n";
+        assert_eq!(find_content_length(headers), Some(100));
+    }
+
+    #[test]
+    fn test_find_header_end_body_preserved() {
+        let buf = b"GET / HTTP/1.1\r\nHost: x\r\n\r\nHELLO BODY";
+        let end = find_header_end(buf).unwrap();
+        // Body starts at end
+        assert_eq!(&buf[end..], b"HELLO BODY");
+    }
+
+    #[test]
+    fn test_find_header_end_empty_headers() {
+        // Minimal: just \r\n\r\n
+        let buf = b"\r\n\r\n";
+        assert_eq!(find_header_end(buf), Some(4));
+    }
+
+    #[test]
+    fn test_find_header_end_not_found() {
+        let buf = b"GET / HTTP/1.1\r\n";
+        assert_eq!(find_header_end(buf), None);
+
+        let buf2 = b"";
+        assert_eq!(find_header_end(buf2), None);
+    }
+
+    #[test]
+    fn test_splice_op_new() {
+        let op = SpliceOp::new(3, 7, 4096);
+        assert_eq!(op.fd_in, 3);
+        assert_eq!(op.fd_out, 7);
+        assert_eq!(op.len, 4096);
+    }
+
+    #[test]
+    fn test_splice_batch_result_fields() {
+        let result = SpliceBatchResult {
+            bytes_transferred: 8192,
+            ops_completed: 4,
+            error: None,
+        };
+        assert_eq!(result.bytes_transferred, 8192);
+        assert_eq!(result.ops_completed, 4);
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn test_splice_error_variants() {
+        // Verify SpliceError variants are distinct and Copy
+        let e1 = SpliceError::WouldBlock;
+        let e2 = SpliceError::BadFd;
+        let e3 = SpliceError::InvalidArg;
+        let e4 = SpliceError::NoMem;
+        let e5 = SpliceError::BrokenPipe;
+        let e6 = SpliceError::ConnectionReset;
+        let e7 = SpliceError::Io(42);
+
+        assert_eq!(e1, SpliceError::WouldBlock);
+        assert_eq!(e7, SpliceError::Io(42));
+        assert_ne!(e1, e2);
+        assert_ne!(e2, e3);
+        assert_ne!(e3, e4);
+        assert_ne!(e4, e5);
+        assert_ne!(e5, e6);
+    }
+
+    #[test]
+    fn test_pipe_buf_size() {
+        // Verify the constant is correct
+        assert_eq!(PIPE_BUF_SIZE, 65536);
+    }
+
+    #[test]
+    fn test_splice_flags_constants() {
+        assert_eq!(splice_flags::SPLICE_F_MOVE,     1);
+        assert_eq!(splice_flags::SPLICE_F_NONBLOCK, 2);
+        assert_eq!(splice_flags::SPLICE_F_MORE,     4);
+        assert_eq!(splice_flags::SPLICE_F_GIFT,     8);
+    }
+
+    #[test]
+    fn test_batched_forwarder_push_and_pending() {
+        let mut batch = BatchedForwarder::<4>::new().expect("failed to create BatchedForwarder");
+
+        assert_eq!(batch.pending(), 0);
+        assert!(!batch.is_full());
+
+        assert!(batch.push(SpliceOp::new(0, 1, 100)));
+        assert!(batch.push(SpliceOp::new(2, 3, 200)));
+        assert_eq!(batch.pending(), 2);
+
+        assert!(batch.push(SpliceOp::new(4, 5, 300)));
+        assert!(batch.push(SpliceOp::new(6, 7, 400)));
+        assert!(batch.is_full());
+
+        // 5th push should fail
+        assert!(!batch.push(SpliceOp::new(8, 9, 500)));
+    }
+
+    #[test]
+    fn test_batched_forwarder_clear() {
+        let mut batch = BatchedForwarder::<4>::new().expect("failed to create BatchedForwarder");
+
+        batch.push(SpliceOp::new(0, 1, 100));
+        batch.push(SpliceOp::new(2, 3, 200));
+        assert_eq!(batch.pending(), 2);
+
+        batch.clear();
+        assert_eq!(batch.pending(), 0);
+        assert!(!batch.is_full());
+    }
 }
