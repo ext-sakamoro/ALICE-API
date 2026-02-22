@@ -1,6 +1,6 @@
 # ALICE-API
 
-**High-Performance API Gateway with Distributed Rate Limiting** - v0.2.0 (Secure API Stack)
+**High-Performance API Gateway with Distributed Rate Limiting** - v0.1.0 (Secure API Stack)
 
 > "Fairness is not a bug, it's a feature."
 
@@ -107,7 +107,7 @@ When multiple clients compete for limited backend capacity:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        ALICE-API v0.2.0                              │
+│                        ALICE-API v0.1.0                              │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │   Client Request                                                     │
@@ -333,6 +333,7 @@ match decision {
 | `SfqShard<Q,D>` | Single shard (cache-line aligned) |
 | `QueuedRequest` | Request with flow hash and size |
 | `WeightedSfq<Q,D>` | SFQ with per-flow weights |
+| `SfqStats` | Queue depth and throughput counters |
 
 **Key Properties:**
 - O(1) enqueue (hash + array access)
@@ -351,6 +352,7 @@ match decision {
 | `SpliceBatchResult` | Batch execution result with stats |
 | `SplicePipe` | Reusable pipe for splice ops |
 | `HttpMethod` | Parsed HTTP method |
+| `RequestLine<'a>` | Parsed request line (method + path slice) |
 
 **Key Properties:**
 - No userspace copies (kernel handles transfer)
@@ -368,6 +370,7 @@ match decision {
 | `TestGateway` | Small footprint for testing |
 | `Backend` | Backend server definition |
 | `Route` | Routing rule with path matching |
+| `GatewayStats` | Request counters and forwarding metrics |
 
 ### `middleware` - Secure API Stack (feature-gated)
 
@@ -497,10 +500,10 @@ alice-api = { version = "0.1", features = ["secure"] }    # Both (full stack)
 
 | Feature | Adds | Test Count |
 |---------|------|------------|
-| (default) | GCRA + SFQ + Zero-Copy | 26 |
-| `auth` | + Ed25519 signature verification | 29 |
-| `crypto` | + XChaCha20-Poly1305 decryption | 29 |
-| `secure` | Both auth + crypto + SecureGateway | 36 |
+| (default) | GCRA + SFQ + Zero-Copy | 102 |
+| `auth` | + Ed25519 signature verification | 105 |
+| `crypto` | + XChaCha20-Poly1305 decryption | 105 |
+| `secure` | Both auth + crypto + SecureGateway | 112 |
 
 ### SecureGateway
 
