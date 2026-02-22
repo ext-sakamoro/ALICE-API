@@ -43,12 +43,7 @@ fn fetch_max_relaxed(atom: &AtomicU64, new_value: u64) -> u64 {
             // Already at or above target, no update needed
             return current;
         }
-        match atom.compare_exchange_weak(
-            current,
-            new_value,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ) {
+        match atom.compare_exchange_weak(current, new_value, Ordering::Relaxed, Ordering::Relaxed) {
             Ok(_) => return current,
             Err(actual) => current = actual,
         }
@@ -346,9 +341,9 @@ impl<const CAPACITY: usize> GcraRegistry<CAPACITY> {
 
     /// Export all TATs for synchronization
     pub fn export_tats(&self) -> impl Iterator<Item = (u64, u64)> + '_ {
-        self.slots.iter().filter_map(|slot| {
-            slot.as_ref().map(|e| (e.key_hash, e.cell.tat()))
-        })
+        self.slots
+            .iter()
+            .filter_map(|slot| slot.as_ref().map(|e| (e.key_hash, e.cell.tat())))
     }
 }
 
@@ -626,7 +621,11 @@ mod tests {
         // First request creates entry
         registry.check(key, 0);
         let initial_tat = {
-            registry.export_tats().find(|(k, _)| *k == key).map(|(_, t)| t).unwrap_or(0)
+            registry
+                .export_tats()
+                .find(|(k, _)| *k == key)
+                .map(|(_, t)| t)
+                .unwrap_or(0)
         };
 
         // Merge a higher TAT from another node
@@ -635,7 +634,11 @@ mod tests {
 
         // After merge, key's TAT should be the higher value
         let merged_tat = {
-            registry.export_tats().find(|(k, _)| *k == key).map(|(_, t)| t).unwrap_or(0)
+            registry
+                .export_tats()
+                .find(|(k, _)| *k == key)
+                .map(|(_, t)| t)
+                .unwrap_or(0)
         };
         assert_eq!(merged_tat, high_tat);
     }
@@ -675,11 +678,17 @@ mod tests {
     #[test]
     fn test_gcra_decision_equality() {
         // GcraDecision derives PartialEq
-        let allow1 = GcraDecision::Allow { reset_after_ns: 100 };
-        let allow2 = GcraDecision::Allow { reset_after_ns: 100 };
-        let allow3 = GcraDecision::Allow { reset_after_ns: 999 };
-        let deny1  = GcraDecision::Deny  { retry_after_ns: 50 };
-        let deny2  = GcraDecision::Deny  { retry_after_ns: 50 };
+        let allow1 = GcraDecision::Allow {
+            reset_after_ns: 100,
+        };
+        let allow2 = GcraDecision::Allow {
+            reset_after_ns: 100,
+        };
+        let allow3 = GcraDecision::Allow {
+            reset_after_ns: 999,
+        };
+        let deny1 = GcraDecision::Deny { retry_after_ns: 50 };
+        let deny2 = GcraDecision::Deny { retry_after_ns: 50 };
 
         assert_eq!(allow1, allow2);
         assert_ne!(allow1, allow3);

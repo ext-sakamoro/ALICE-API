@@ -416,7 +416,10 @@ mod tests {
         };
 
         let decision = gw.process(&request, &auth, sign_msg);
-        assert!(matches!(decision, GatewayDecision::Forward { backend_id: 1 }));
+        assert!(matches!(
+            decision,
+            GatewayDecision::Forward { backend_id: 1 }
+        ));
     }
 
     #[cfg(all(feature = "auth", feature = "crypto"))]
@@ -500,7 +503,10 @@ mod tests {
 
         let (decision, plaintext_len) =
             gw.process_encrypted(&request, &auth, sign_msg, &key, &nonce, &mut body[..ct_len]);
-        assert!(matches!(decision, GatewayDecision::Forward { backend_id: 1 }));
+        assert!(matches!(
+            decision,
+            GatewayDecision::Forward { backend_id: 1 }
+        ));
         assert_eq!(plaintext_len, Some(pt_len));
         assert_eq!(&body[..pt_len], plaintext);
     }

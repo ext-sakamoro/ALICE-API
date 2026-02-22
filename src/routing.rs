@@ -201,16 +201,8 @@ pub fn sendfile(
         // macOS sendfile has different signature
         let mut len = count as off_t;
         let off_val = offset.map_or(0, |o| *o);
-        let result = unsafe {
-            libc::sendfile(
-                in_fd,
-                out_fd,
-                off_val,
-                &mut len,
-                ptr::null_mut(),
-                0,
-            )
-        };
+        let result =
+            unsafe { libc::sendfile(in_fd, out_fd, off_val, &mut len, ptr::null_mut(), 0) };
         if result == 0 || (result == -1 && len > 0) {
             len as ssize_t
         } else {
@@ -727,23 +719,23 @@ mod tests {
 
     #[test]
     fn test_all_http_methods() {
-        assert_eq!(HttpMethod::from_bytes(b"GET"),     HttpMethod::Get);
-        assert_eq!(HttpMethod::from_bytes(b"POST"),    HttpMethod::Post);
-        assert_eq!(HttpMethod::from_bytes(b"PUT"),     HttpMethod::Put);
-        assert_eq!(HttpMethod::from_bytes(b"DELETE"),  HttpMethod::Delete);
-        assert_eq!(HttpMethod::from_bytes(b"PATCH"),   HttpMethod::Patch);
-        assert_eq!(HttpMethod::from_bytes(b"HEAD"),    HttpMethod::Head);
+        assert_eq!(HttpMethod::from_bytes(b"GET"), HttpMethod::Get);
+        assert_eq!(HttpMethod::from_bytes(b"POST"), HttpMethod::Post);
+        assert_eq!(HttpMethod::from_bytes(b"PUT"), HttpMethod::Put);
+        assert_eq!(HttpMethod::from_bytes(b"DELETE"), HttpMethod::Delete);
+        assert_eq!(HttpMethod::from_bytes(b"PATCH"), HttpMethod::Patch);
+        assert_eq!(HttpMethod::from_bytes(b"HEAD"), HttpMethod::Head);
         assert_eq!(HttpMethod::from_bytes(b"OPTIONS"), HttpMethod::Options);
         assert_eq!(HttpMethod::from_bytes(b"CONNECT"), HttpMethod::Connect);
-        assert_eq!(HttpMethod::from_bytes(b"TRACE"),   HttpMethod::Trace);
-        assert_eq!(HttpMethod::from_bytes(b""),        HttpMethod::Unknown);
-        assert_eq!(HttpMethod::from_bytes(b"get"),     HttpMethod::Unknown); // case-sensitive
+        assert_eq!(HttpMethod::from_bytes(b"TRACE"), HttpMethod::Trace);
+        assert_eq!(HttpMethod::from_bytes(b""), HttpMethod::Unknown);
+        assert_eq!(HttpMethod::from_bytes(b"get"), HttpMethod::Unknown); // case-sensitive
     }
 
     #[test]
     fn test_http_method_equality() {
-        assert_eq!(HttpMethod::Get,  HttpMethod::Get);
-        assert_ne!(HttpMethod::Get,  HttpMethod::Post);
+        assert_eq!(HttpMethod::Get, HttpMethod::Get);
+        assert_ne!(HttpMethod::Get, HttpMethod::Post);
         assert_ne!(HttpMethod::Post, HttpMethod::Put);
     }
 
@@ -885,10 +877,10 @@ mod tests {
 
     #[test]
     fn test_splice_flags_constants() {
-        assert_eq!(splice_flags::SPLICE_F_MOVE,     1);
+        assert_eq!(splice_flags::SPLICE_F_MOVE, 1);
         assert_eq!(splice_flags::SPLICE_F_NONBLOCK, 2);
-        assert_eq!(splice_flags::SPLICE_F_MORE,     4);
-        assert_eq!(splice_flags::SPLICE_F_GIFT,     8);
+        assert_eq!(splice_flags::SPLICE_F_MORE, 4);
+        assert_eq!(splice_flags::SPLICE_F_GIFT, 8);
     }
 
     #[test]

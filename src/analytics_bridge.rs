@@ -54,19 +54,29 @@ impl ApiMetrics {
 
     /// Estimated unique client count.
     #[inline(always)]
-    pub fn unique_client_count(&self) -> f64 { self.unique_clients.cardinality() }
+    pub fn unique_client_count(&self) -> f64 {
+        self.unique_clients.cardinality()
+    }
     /// P99 latency.
     #[inline(always)]
-    pub fn p99_latency(&self) -> f64 { self.latency.quantile(0.99) }
+    pub fn p99_latency(&self) -> f64 {
+        self.latency.quantile(0.99)
+    }
     /// P50 latency.
     #[inline(always)]
-    pub fn p50_latency(&self) -> f64 { self.latency.quantile(0.50) }
+    pub fn p50_latency(&self) -> f64 {
+        self.latency.quantile(0.50)
+    }
     /// Endpoint request frequency.
     #[inline(always)]
-    pub fn endpoint_frequency(&self, endpoint: &[u8]) -> u64 { self.endpoint_freq.estimate_bytes(endpoint) }
+    pub fn endpoint_frequency(&self, endpoint: &[u8]) -> u64 {
+        self.endpoint_freq.estimate_bytes(endpoint)
+    }
     /// Check if a latency value is anomalous.
     #[inline(always)]
-    pub fn is_latency_anomaly(&mut self, latency_us: f64) -> bool { self.anomaly.is_anomaly(latency_us) }
+    pub fn is_latency_anomaly(&mut self, latency_us: f64) -> bool {
+        self.anomaly.is_anomaly(latency_us)
+    }
     /// Rate-limit ratio.
     #[inline(always)]
     pub fn rate_limit_ratio(&self) -> f64 {
@@ -81,7 +91,9 @@ impl ApiMetrics {
 }
 
 impl Default for ApiMetrics {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

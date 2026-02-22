@@ -43,9 +43,9 @@ pub struct GatewayConfig {
 impl Default for GatewayConfig {
     fn default() -> Self {
         Self {
-            rate_limit: 100.0,   // 100 req/s per client
-            rate_burst: 20,      // Burst of 20
-            queue_quantum: 1500, // MTU-sized quantum
+            rate_limit: 100.0,               // 100 req/s per client
+            rate_burst: 20,                  // Burst of 20
+            queue_quantum: 1500,             // MTU-sized quantum
             max_body_size: 10 * 1024 * 1024, // 10 MB
             timeout_ns: 30_000_000_000,      // 30 seconds
         }
@@ -349,7 +349,10 @@ impl<
 
     /// Find backend by ID
     fn get_backend(&self, id: u32) -> Option<&Backend> {
-        self.backends.iter().filter_map(|b| b.as_ref()).find(|b| b.id == id && b.healthy)
+        self.backends
+            .iter()
+            .filter_map(|b| b.as_ref())
+            .find(|b| b.id == id && b.healthy)
     }
 
     /// Find matching route
@@ -380,7 +383,10 @@ impl<
         }
 
         // 2. Rate limiting
-        match self.rate_limiter.check(request.client_hash, request.timestamp_ns) {
+        match self
+            .rate_limiter
+            .check(request.client_hash, request.timestamp_ns)
+        {
             GcraDecision::Allow { .. } => {}
             GcraDecision::Deny { retry_after_ns } => {
                 self.stats.requests_rate_limited += 1;
@@ -542,14 +548,17 @@ mod tests {
 
         // Process
         let decision = gw.process(&request);
-        assert!(matches!(decision, GatewayDecision::Forward { backend_id: 1 }));
+        assert!(matches!(
+            decision,
+            GatewayDecision::Forward { backend_id: 1 }
+        ));
     }
 
     #[test]
     fn test_gateway_rate_limiting() {
         let mut config = GatewayConfig::default();
         config.rate_limit = 2.0; // 2 req/s
-        config.rate_burst = 2;   // Burst of 2
+        config.rate_burst = 2; // Burst of 2
 
         let mut gw = TestGateway::new(config);
 
@@ -773,7 +782,10 @@ mod tests {
         // Mark healthy again
         gw.mark_healthy(1);
         let decision = gw.process(&request);
-        assert!(matches!(decision, GatewayDecision::Forward { backend_id: 1 }));
+        assert!(matches!(
+            decision,
+            GatewayDecision::Forward { backend_id: 1 }
+        ));
     }
 
     #[test]
@@ -898,8 +910,12 @@ mod tests {
         assert_eq!(GatewayDecision::NotFound, GatewayDecision::NotFound);
         assert_ne!(GatewayDecision::NotFound, GatewayDecision::InternalError);
         assert_eq!(
-            GatewayDecision::RateLimited { retry_after_ns: 100 },
-            GatewayDecision::RateLimited { retry_after_ns: 100 },
+            GatewayDecision::RateLimited {
+                retry_after_ns: 100
+            },
+            GatewayDecision::RateLimited {
+                retry_after_ns: 100
+            },
         );
     }
 
@@ -935,7 +951,7 @@ mod tests {
         let mut gw = TestGateway::new(config); // MAX_ROUTES = 8
 
         for i in 0..8 {
-            let prefix = [b'/' , b'a' + i as u8];
+            let prefix = [b'/', b'a' + i as u8];
             assert!(gw.add_route(Route::new(&prefix)));
         }
 

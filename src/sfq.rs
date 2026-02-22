@@ -683,7 +683,10 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
     /// Get mutable reference to a specific shard
     ///
     /// Useful for per-thread ownership pattern.
-    pub fn shard_mut(&mut self, shard_idx: usize) -> Option<&mut StochasticFairQueue<QUEUES, DEPTH>> {
+    pub fn shard_mut(
+        &mut self,
+        shard_idx: usize,
+    ) -> Option<&mut StochasticFairQueue<QUEUES, DEPTH>> {
         if shard_idx < SHARDS {
             Some(&mut self.shards[shard_idx].queue)
         } else {
@@ -758,10 +761,7 @@ mod tests {
         // Check interleaving (fairness) - shouldn't be all A then all B
         // Note: If flows hash to the same queue, interleaving won't happen
         // This is a probabilistic test - with 16 queues, collision is 1/16
-        let consecutive_same = order
-            .windows(2)
-            .filter(|w| w[0] == w[1])
-            .count();
+        let consecutive_same = order.windows(2).filter(|w| w[0] == w[1]).count();
 
         // With possible hash collision, we allow up to 19 consecutive
         // (worst case: all same queue means all 19 pairs are same-flow)

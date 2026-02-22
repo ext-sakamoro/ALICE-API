@@ -3,8 +3,8 @@
 //! Route API requests through a lock-free message queue for async processing.
 //! Gateway → Queue (enqueue) → Worker (dequeue with idempotency).
 
-use alice_queue::{AliceQueue, Message, GapResult};
 use crate::gateway::GatewayRequest;
+use alice_queue::{AliceQueue, GapResult, Message};
 
 /// Queued API gateway that buffers requests through ALICE-Queue.
 pub struct QueuedGateway<const N: usize> {
@@ -54,17 +54,27 @@ impl<const N: usize> QueuedGateway<N> {
     }
 
     /// Queue depth.
-    pub fn pending(&self) -> usize { self.queue.len() }
+    pub fn pending(&self) -> usize {
+        self.queue.len()
+    }
     /// Total enqueued.
-    pub fn total_enqueued(&self) -> u64 { self.enqueued }
+    pub fn total_enqueued(&self) -> u64 {
+        self.enqueued
+    }
     /// Total processed.
-    pub fn total_processed(&self) -> u64 { self.processed }
+    pub fn total_processed(&self) -> u64 {
+        self.processed
+    }
     /// Total duplicates dropped.
-    pub fn total_duplicates(&self) -> u64 { self.duplicates }
+    pub fn total_duplicates(&self) -> u64 {
+        self.duplicates
+    }
 }
 
 impl<const N: usize> Default for QueuedGateway<N> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

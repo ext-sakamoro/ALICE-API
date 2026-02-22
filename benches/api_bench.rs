@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use alice_api::prelude::*;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 fn now_ns() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};

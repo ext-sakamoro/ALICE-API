@@ -106,44 +106,43 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-pub mod gcra;
-pub mod sfq;
-pub mod routing;
+#[cfg(feature = "analytics")]
+pub mod analytics_bridge;
 pub mod gateway;
+pub mod gcra;
 #[cfg(any(feature = "auth", feature = "crypto"))]
 pub mod middleware;
 #[cfg(feature = "queue")]
 pub mod queue_bridge;
-#[cfg(feature = "analytics")]
-pub mod analytics_bridge;
+pub mod routing;
+pub mod sfq;
 
 /// Prelude for convenient imports
 pub mod prelude {
-    pub use crate::gcra::{GcraCell, GcraDecision, GcraRegistry};
-    pub use crate::sfq::{
-        StochasticFairQueue, QueuedRequest, SfqStats, WeightedSfq,
-        ShardedSfq, SfqShard,
-    };
-    pub use crate::routing::{
-        HttpMethod, RequestLine, SpliceError, ZeroCopyForwarder,
-        BatchedForwarder, SpliceOp, SpliceBatchResult,
-        parse_request_line, find_content_length, find_header_end,
-    };
     pub use crate::gateway::{
-        Gateway, GatewayConfig, GatewayDecision, GatewayRequest, GatewayStats,
-        Backend, Route, DefaultGateway, EdgeGateway, TestGateway,
+        Backend, DefaultGateway, EdgeGateway, Gateway, GatewayConfig, GatewayDecision,
+        GatewayRequest, GatewayStats, Route, TestGateway,
+    };
+    pub use crate::gcra::{GcraCell, GcraDecision, GcraRegistry};
+    pub use crate::routing::{
+        find_content_length, find_header_end, parse_request_line, BatchedForwarder, HttpMethod,
+        RequestLine, SpliceBatchResult, SpliceError, SpliceOp, ZeroCopyForwarder,
+    };
+    pub use crate::sfq::{
+        QueuedRequest, SfqShard, SfqStats, ShardedSfq, StochasticFairQueue, WeightedSfq,
     };
 
     #[cfg(feature = "auth")]
-    pub use crate::middleware::{AuthContext, AliceId, AliceSig};
+    pub use crate::middleware::{AliceId, AliceSig, AuthContext};
 
     #[cfg(feature = "crypto")]
-    pub use crate::middleware::{decrypt_body, decrypt_body_aead, Key, Nonce, CipherError, TAG_SIZE};
+    pub use crate::middleware::{
+        decrypt_body, decrypt_body_aead, CipherError, Key, Nonce, TAG_SIZE,
+    };
 
     #[cfg(all(feature = "auth", feature = "crypto"))]
     pub use crate::middleware::{
-        SecureGateway, SecureStats,
-        DefaultSecureGateway, EdgeSecureGateway, TestSecureGateway,
+        DefaultSecureGateway, EdgeSecureGateway, SecureGateway, SecureStats, TestSecureGateway,
     };
 }
 
@@ -230,7 +229,10 @@ mod tests {
         };
 
         let decision = gw.process(&request);
-        assert!(matches!(decision, GatewayDecision::Forward { backend_id: 1 }));
+        assert!(matches!(
+            decision,
+            GatewayDecision::Forward { backend_id: 1 }
+        ));
 
         // Check stats
         let stats = gw.stats();
