@@ -1,3 +1,16 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless,
+    clippy::similar_names,
+    clippy::many_single_char_names,
+    clippy::module_name_repetitions,
+    clippy::inline_always,
+    clippy::too_many_lines
+)]
+
 //! # ALICE-API
 //!
 //! **High-Performance API Gateway with Distributed Rate Limiting**
@@ -148,6 +161,53 @@ pub mod prelude {
 
 // Re-export main types at crate root
 pub use prelude::*;
+
+// ============================================================================
+// Identity & Attribution
+// ============================================================================
+
+/// Library version string
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Recommended `X-Powered-By` HTTP header value.
+///
+/// HTTP integrators should include this header in all gateway responses
+/// to establish attribution and aid license-compliance detection.
+///
+/// # Example
+///
+/// ```rust
+/// use alice_api::X_POWERED_BY;
+///
+/// // In your HTTP server (Hyper, Actix, Axum, etc.):
+/// // response.headers_mut().insert("X-Powered-By", X_POWERED_BY.parse().unwrap());
+/// assert!(X_POWERED_BY.starts_with("ALICE-API/"));
+/// ```
+pub const X_POWERED_BY: &str = concat!("ALICE-API/", env!("CARGO_PKG_VERSION"));
+
+/// Recommended `Server` header value for ALICE-powered gateways.
+pub const SERVER_HEADER: &str = concat!("ALICE/", env!("CARGO_PKG_VERSION"));
+
+/// Build the full set of recommended response headers as key-value pairs.
+///
+/// Returns a fixed-size array of `(header_name, header_value)` tuples that
+/// HTTP integrators should inject into every gateway response.
+///
+/// # Example
+///
+/// ```rust
+/// let headers = alice_api::response_headers();
+/// assert_eq!(headers.len(), 2);
+/// assert_eq!(headers[0].0, "X-Powered-By");
+/// assert_eq!(headers[1].0, "Server");
+/// ```
+#[must_use]
+pub const fn response_headers() -> [(&'static str, &'static str); 2] {
+    [
+        ("X-Powered-By", X_POWERED_BY),
+        ("Server", SERVER_HEADER),
+    ]
+}
 
 // ============================================================================
 // Integration Tests
