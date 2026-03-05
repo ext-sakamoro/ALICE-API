@@ -121,10 +121,13 @@
 
 #[cfg(feature = "analytics")]
 pub mod analytics_bridge;
+pub mod circuit_breaker;
 #[cfg(feature = "ffi")]
 pub mod ffi;
 pub mod gateway;
 pub mod gcra;
+pub mod health;
+pub mod loadbalancer;
 #[cfg(any(feature = "auth", feature = "crypto"))]
 pub mod middleware;
 #[cfg(feature = "queue")]
@@ -145,6 +148,12 @@ pub mod prelude {
     };
     pub use crate::sfq::{
         QueuedRequest, SfqShard, SfqStats, ShardedSfq, StochasticFairQueue, WeightedSfq,
+    };
+
+    pub use crate::circuit_breaker::{BreakerConfig, BreakerRegistry, BreakerState, CircuitBreaker};
+    pub use crate::health::{HealthChecker, HealthConfig, HealthRegistry};
+    pub use crate::loadbalancer::{
+        BackendEntry, ConsistentHash, LeastConnections, WeightedRoundRobin,
     };
 
     #[cfg(feature = "auth")]
