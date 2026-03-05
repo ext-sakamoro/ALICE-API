@@ -8,6 +8,7 @@
 
 use alice_api::prelude::*;
 
+#[allow(clippy::cast_possible_truncation)]
 fn now_ns() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -16,6 +17,7 @@ fn now_ns() -> u64 {
         .as_nanos() as u64
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn main() {
     println!("=== GCRA Rate Limiter Demo ===\n");
 
@@ -29,7 +31,7 @@ fn main() {
         let decision = cell.check(now_ns());
         match decision {
             GcraDecision::Allow { .. } => {
-                println!("Request {}: ALLOWED", i);
+                println!("Request {i}: ALLOWED");
             }
             GcraDecision::Deny { retry_after_ns } => {
                 println!(
@@ -79,8 +81,8 @@ fn main() {
     for &client in &clients {
         let decision = registry.check(client, t);
         match decision {
-            GcraDecision::Allow { .. } => println!("Client 0x{:X}: ALLOWED", client),
-            GcraDecision::Deny { .. } => println!("Client 0x{:X}: DENIED", client),
+            GcraDecision::Allow { .. } => println!("Client 0x{client:X}: ALLOWED"),
+            GcraDecision::Deny { .. } => println!("Client 0x{client:X}: DENIED"),
         }
     }
 }

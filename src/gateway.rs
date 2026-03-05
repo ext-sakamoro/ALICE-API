@@ -135,7 +135,7 @@ impl Route {
         &self.path_prefix[..self.prefix_len]
     }
 
-    pub fn add_backend(&mut self, backend_id: u32) {
+    pub const fn add_backend(&mut self, backend_id: u32) {
         if self.backend_count < 8 {
             self.backends[self.backend_count] = backend_id;
             self.backend_count += 1;
@@ -158,7 +158,7 @@ impl Route {
     }
 
     /// Get next backend (round-robin)
-    pub fn next_backend(&mut self) -> Option<u32> {
+    pub const fn next_backend(&mut self) -> Option<u32> {
         if self.backend_count == 0 {
             return None;
         }
@@ -235,7 +235,7 @@ impl FnvHash {
     const PRIME: u64 = 0x0000_0100_0000_01b3;
 
     #[inline(always)]
-    fn new() -> Self {
+    const fn new() -> Self {
         Self(Self::OFFSET)
     }
 
@@ -248,7 +248,7 @@ impl FnvHash {
     }
 
     #[inline(always)]
-    fn finish(&self) -> u64 {
+    const fn finish(&self) -> u64 {
         // Avalanche mixer
         let mut h = self.0;
         h ^= h >> 33;
@@ -334,7 +334,7 @@ impl<
     }
 
     /// Add a backend
-    pub fn add_backend(&mut self, backend: Backend) -> Option<u32> {
+    pub const fn add_backend(&mut self, backend: Backend) -> Option<u32> {
         if self.backend_count >= MAX_BACKENDS {
             return None;
         }
@@ -345,7 +345,7 @@ impl<
     }
 
     /// Add a route
-    pub fn add_route(&mut self, route: Route) -> bool {
+    pub const fn add_route(&mut self, route: Route) -> bool {
         if self.route_count >= MAX_ROUTES {
             return false;
         }
@@ -445,28 +445,28 @@ impl<
     }
 
     /// Get gateway statistics
-    pub fn stats(&self) -> GatewayStats {
+    pub const fn stats(&self) -> GatewayStats {
         self.stats
     }
 
     /// Get queue statistics
-    pub fn queue_stats(&self) -> SfqStats {
+    pub const fn queue_stats(&self) -> SfqStats {
         self.queue.stats()
     }
 
     /// Get current queue length
-    pub fn queue_len(&self) -> usize {
+    pub const fn queue_len(&self) -> usize {
         self.queue.len()
     }
 
     /// Generate next request ID
-    pub fn next_request_id(&mut self) -> u64 {
+    pub const fn next_request_id(&mut self) -> u64 {
         self.request_counter += 1;
         self.request_counter
     }
 
     /// Rotate SFQ hash seed (call periodically)
-    pub fn rotate_queue_seed(&mut self, seed: u64) {
+    pub const fn rotate_queue_seed(&mut self, seed: u64) {
         self.queue.rotate_seed(seed);
     }
 
@@ -560,9 +560,11 @@ mod tests {
 
     #[test]
     fn test_gateway_rate_limiting() {
-        let mut config = GatewayConfig::default();
-        config.rate_limit = 2.0; // 2 req/s
-        config.rate_burst = 2; // Burst of 2
+        let config = GatewayConfig {
+            rate_limit: 2.0, // 2 req/s
+            rate_burst: 2,   // Burst of 2
+            ..GatewayConfig::default()
+        };
 
         let mut gw = TestGateway::new(config);
 
@@ -591,8 +593,7 @@ mod tests {
             let decision = gw.process(&request);
             assert!(
                 matches!(decision, GatewayDecision::Forward { .. }),
-                "Request {} should be forwarded",
-                i
+                "Request {i} should be forwarded"
             );
         }
 
@@ -648,6 +649,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn test_gateway_config_default() {
         let config = GatewayConfig::default();
         assert_eq!(config.rate_limit, 100.0);
@@ -728,8 +730,10 @@ mod tests {
 
     #[test]
     fn test_gateway_payload_too_large() {
-        let mut config = GatewayConfig::default();
-        config.max_body_size = 1024;
+        let config = GatewayConfig {
+            max_body_size: 1024,
+            ..GatewayConfig::default()
+        };
 
         let mut gw = TestGateway::new(config);
         gw.add_backend(Backend::new(1, b"localhost", 8080));

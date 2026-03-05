@@ -1,6 +1,7 @@
 use alice_api::prelude::*;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
+#[allow(clippy::cast_possible_truncation)]
 fn now_ns() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -15,8 +16,8 @@ fn bench_gcra_check(c: &mut Criterion) {
     c.bench_function("gcra_check_allow", |b| {
         b.iter(|| {
             let t = black_box(now_ns());
-            cell.check(t)
-        })
+            cell.check(t);
+        });
     });
 }
 
@@ -28,8 +29,8 @@ fn bench_gcra_registry(c: &mut Criterion) {
         let mut key = 0u64;
         b.iter(|| {
             key = key.wrapping_add(1);
-            registry.check(black_box(key % 1000), t)
-        })
+            registry.check(black_box(key % 1000), t);
+        });
     });
 }
 
@@ -48,11 +49,11 @@ fn bench_sfq_enqueue_dequeue(c: &mut Criterion) {
                     sfq.enqueue(QueuedRequest {
                         flow_hash: i,
                         size: 512,
-                        request_id: i as u32,
-                        timestamp_ns: 0,
+                        id: i,
+                        enqueue_time: 0,
                     });
-                    sfq.dequeue()
-                })
+                    sfq.dequeue();
+                });
             },
         );
     }
@@ -69,10 +70,10 @@ fn bench_sharded_sfq(c: &mut Criterion) {
             sfq.enqueue(QueuedRequest {
                 flow_hash: black_box(i),
                 size: 512,
-                request_id: i as u32,
-                timestamp_ns: 0,
+                id: i,
+                enqueue_time: 0,
             });
-        })
+        });
     });
 }
 
@@ -84,7 +85,7 @@ fn bench_gcra_merge(c: &mut Criterion) {
     c.bench_function("gcra_merge", |b| {
         b.iter(|| {
             cell.merge(black_box(t + 1_000_000));
-        })
+        });
     });
 }
 

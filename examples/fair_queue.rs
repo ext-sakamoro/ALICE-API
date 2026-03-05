@@ -25,7 +25,7 @@ fn main() {
     for &(hash, name, size) in &flows {
         for i in 0..5u64 {
             sfq.enqueue(QueuedRequest::new(hash, size, hash + i, 0));
-            println!("  {} -> req {} ({} bytes)", name, i, size);
+            println!("  {name} -> req {i} ({size} bytes)");
         }
     }
 
@@ -45,7 +45,7 @@ fn main() {
         dequeued += 1;
     }
 
-    println!("\nTotal dequeued: {}", dequeued);
+    println!("\nTotal dequeued: {dequeued}");
 
     // --- Sharded SFQ for multi-threading ---
     println!("\n=== Sharded SFQ (4 cores) ===\n");
@@ -62,6 +62,6 @@ fn main() {
         while sharded.dequeue_from_shard(shard).is_some() {
             count += 1;
         }
-        println!("  Shard {}: {} requests", shard, count);
+        println!("  Shard {shard}: {count} requests");
     }
 }

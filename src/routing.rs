@@ -70,15 +70,15 @@ pub enum SpliceError {
 
 impl SpliceError {
     #[allow(unreachable_patterns)] // EAGAIN == EWOULDBLOCK on some platforms
-    fn from_errno(errno: i32) -> Self {
+    const fn from_errno(errno: i32) -> Self {
         match errno {
-            libc::EAGAIN | libc::EWOULDBLOCK => SpliceError::WouldBlock,
-            libc::EBADF => SpliceError::BadFd,
-            libc::EINVAL => SpliceError::InvalidArg,
-            libc::ENOMEM => SpliceError::NoMem,
-            libc::EPIPE => SpliceError::BrokenPipe,
-            libc::ECONNRESET => SpliceError::ConnectionReset,
-            e => SpliceError::Io(e),
+            libc::EAGAIN | libc::EWOULDBLOCK => Self::WouldBlock,
+            libc::EBADF => Self::BadFd,
+            libc::EINVAL => Self::InvalidArg,
+            libc::ENOMEM => Self::NoMem,
+            libc::EPIPE => Self::BrokenPipe,
+            libc::ECONNRESET => Self::ConnectionReset,
+            e => Self::Io(e),
         }
     }
 }
@@ -96,7 +96,7 @@ pub fn create_pipe() -> Result<(c_int, c_int), SpliceError> {
     if ret < 0 {
         Err(SpliceError::from_errno(unsafe { *libc::__error() }))
     } else {
-        Ok((fds[0], fds[1]))
+        Ok(fds.into())
     }
 }
 
@@ -108,7 +108,7 @@ pub fn create_pipe2(flags: c_int) -> Result<(c_int, c_int), SpliceError> {
     if ret < 0 {
         Err(SpliceError::from_errno(unsafe { *libc::__error() }))
     } else {
-        Ok((fds[0], fds[1]))
+        Ok(fds.into())
     }
 }
 
@@ -262,14 +262,14 @@ impl SplicePipe {
     /// Get read fd
     #[inline(always)]
     #[must_use]
-    pub fn read_fd(&self) -> c_int {
+    pub const fn read_fd(&self) -> c_int {
         self.read_fd
     }
 
     /// Get write fd
     #[inline(always)]
     #[must_use]
-    pub fn write_fd(&self) -> c_int {
+    pub const fn write_fd(&self) -> c_int {
         self.write_fd
     }
 }
@@ -386,7 +386,7 @@ impl ZeroCopyForwarder {
 
     /// Get statistics
     #[must_use]
-    pub fn stats(&self) -> (u64, u64) {
+    pub const fn stats(&self) -> (u64, u64) {
         (self.bytes_forwarded, self.forward_count)
     }
 }
@@ -414,7 +414,7 @@ pub struct SpliceOp {
 
 impl SpliceOp {
     #[must_use]
-    pub fn new(fd_in: c_int, fd_out: c_int, len: usize) -> Self {
+    pub const fn new(fd_in: c_int, fd_out: c_int, len: usize) -> Self {
         Self { fd_in, fd_out, len }
     }
 }
@@ -481,7 +481,7 @@ impl<const MAX_OPS: usize> BatchedForwarder<MAX_OPS> {
     ///
     /// Returns false if batch is full
     #[inline(always)]
-    pub fn push(&mut self, op: SpliceOp) -> bool {
+    pub const fn push(&mut self, op: SpliceOp) -> bool {
         if self.count >= MAX_OPS {
             return false;
         }
@@ -493,14 +493,14 @@ impl<const MAX_OPS: usize> BatchedForwarder<MAX_OPS> {
     /// Get number of pending operations
     #[inline(always)]
     #[must_use]
-    pub fn pending(&self) -> usize {
+    pub const fn pending(&self) -> usize {
         self.count
     }
 
     /// Check if batch is full
     #[inline(always)]
     #[must_use]
-    pub fn is_full(&self) -> bool {
+    pub const fn is_full(&self) -> bool {
         self.count >= MAX_OPS
     }
 
@@ -591,7 +591,7 @@ impl<const MAX_OPS: usize> BatchedForwarder<MAX_OPS> {
 
     /// Get lifetime statistics
     #[must_use]
-    pub fn stats(&self) -> (u64, u64) {
+    pub const fn stats(&self) -> (u64, u64) {
         (self.total_bytes, self.total_ops)
     }
 }
@@ -619,16 +619,16 @@ impl HttpMethod {
     #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Self {
         match bytes {
-            b"GET" => HttpMethod::Get,
-            b"POST" => HttpMethod::Post,
-            b"PUT" => HttpMethod::Put,
-            b"DELETE" => HttpMethod::Delete,
-            b"PATCH" => HttpMethod::Patch,
-            b"HEAD" => HttpMethod::Head,
-            b"OPTIONS" => HttpMethod::Options,
-            b"CONNECT" => HttpMethod::Connect,
-            b"TRACE" => HttpMethod::Trace,
-            _ => HttpMethod::Unknown,
+            b"GET" => Self::Get,
+            b"POST" => Self::Post,
+            b"PUT" => Self::Put,
+            b"DELETE" => Self::Delete,
+            b"PATCH" => Self::Patch,
+            b"HEAD" => Self::Head,
+            b"OPTIONS" => Self::Options,
+            b"CONNECT" => Self::Connect,
+            b"TRACE" => Self::Trace,
+            _ => Self::Unknown,
         }
     }
 }
@@ -825,7 +825,7 @@ mod tests {
     #[test]
     fn test_find_content_length_large_value() {
         let headers = b"Content-Length: 1048576\r\n\r\n";
-        assert_eq!(find_content_length(headers), Some(1048576));
+        assert_eq!(find_content_length(headers), Some(1_048_576));
     }
 
     #[test]

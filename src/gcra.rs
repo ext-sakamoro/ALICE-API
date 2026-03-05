@@ -116,7 +116,7 @@ impl GcraCell {
     /// * `emission_interval_ns` - Nanoseconds between tokens
     /// * `burst_tolerance_ns` - Maximum burst tolerance in nanoseconds
     #[must_use]
-    pub fn with_params(emission_interval_ns: u64, burst_tolerance_ns: u64) -> Self {
+    pub const fn with_params(emission_interval_ns: u64, burst_tolerance_ns: u64) -> Self {
         Self {
             tat: AtomicU64::new(0),
             emission_interval: emission_interval_ns,
@@ -208,7 +208,7 @@ impl GcraCell {
 
     /// Get rate limit parameters
     #[inline(always)]
-    pub fn params(&self) -> (u64, u64) {
+    pub const fn params(&self) -> (u64, u64) {
         (self.emission_interval, self.burst_tolerance)
     }
 }
@@ -257,13 +257,14 @@ impl<const CAPACITY: usize> GcraRegistry<CAPACITY> {
     /// Check rate limit for a key
     pub fn check(&mut self, key_hash: u64, now_ns: u64) -> GcraDecision {
         let idx = self.find_or_create(key_hash, now_ns);
-        if let Some(entry) = &self.slots[idx] {
-            entry.last_access.store(now_ns, Ordering::Relaxed);
-            entry.cell.check(now_ns)
-        } else {
+        self.slots[idx].as_ref().map_or(
             // Should not happen, but allow if it does
-            GcraDecision::Allow { reset_after_ns: 0 }
-        }
+            GcraDecision::Allow { reset_after_ns: 0 },
+            |entry| {
+                entry.last_access.store(now_ns, Ordering::Relaxed);
+                entry.cell.check(now_ns)
+            },
+        )
     }
 
     /// Find existing entry or create new one
@@ -324,7 +325,7 @@ impl<const CAPACITY: usize> GcraRegistry<CAPACITY> {
     }
 
     /// Get current entry count
-    pub fn count(&self) -> usize {
+    pub const fn count(&self) -> usize {
         self.count
     }
 
@@ -373,17 +374,17 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::no_effect_underscore_binding)]
     fn test_gcra_basic() {
         let cell = GcraCell::new(10.0, 5); // 10 req/s, burst of 5
-        let _emission = NANOS_PER_SEC / 10; // 100ms
+        let _emission_interval = NANOS_PER_SEC / 10; // 100ms
 
         // Should allow burst of 5
         for i in 0..5 {
             let result = cell.check(0);
             assert!(
                 matches!(result, GcraDecision::Allow { .. }),
-                "Request {} should be allowed",
-                i
+                "Request {i} should be allowed"
             );
         }
 
@@ -403,8 +404,7 @@ mod tests {
             let result = cell.check(now);
             assert!(
                 matches!(result, GcraDecision::Allow { .. }),
-                "Request at {} should be allowed",
-                now
+                "Request at {now} should be allowed"
             );
         }
     }
@@ -475,7 +475,7 @@ mod tests {
                 assert!(retry_after_ns > NANOS_PER_SEC / 2);
                 assert!(retry_after_ns <= NANOS_PER_SEC);
             }
-            _ => panic!("Expected Deny"),
+            GcraDecision::Allow { .. } => panic!("Expected Deny"),
         }
     }
 
@@ -573,7 +573,7 @@ mod tests {
                 assert!(reset_after_ns > 0);
                 assert!(reset_after_ns <= NANOS_PER_SEC);
             }
-            _ => panic!("Expected Allow"),
+            GcraDecision::Deny { .. } => panic!("Expected Allow"),
         }
     }
 
@@ -598,7 +598,7 @@ mod tests {
     fn test_gcra_registry_same_key_reuse() {
         let mut registry = GcraRegistry::<16>::new(5.0, 3);
 
-        let key = 0xDEADBEEFu64;
+        let key = 0xDEAD_BEEF_u64;
 
         // First check creates the entry
         assert!(matches!(registry.check(key, 0), GcraDecision::Allow { .. }));
@@ -613,7 +613,7 @@ mod tests {
     fn test_gcra_registry_merge() {
         let mut registry = GcraRegistry::<16>::new(10.0, 5);
 
-        let key = 0xABCD1234u64;
+        let key = 0xABCD_1234_u64;
 
         // First request creates entry
         registry.check(key, 0);
@@ -621,8 +621,7 @@ mod tests {
             registry
                 .export_tats()
                 .find(|(k, _)| *k == key)
-                .map(|(_, t)| t)
-                .unwrap_or(0)
+                .map_or(0, |(_, t)| t)
         };
 
         // Merge a higher TAT from another node
@@ -634,8 +633,7 @@ mod tests {
             registry
                 .export_tats()
                 .find(|(k, _)| *k == key)
-                .map(|(_, t)| t)
-                .unwrap_or(0)
+                .map_or(0, |(_, t)| t)
         };
         assert_eq!(merged_tat, high_tat);
     }

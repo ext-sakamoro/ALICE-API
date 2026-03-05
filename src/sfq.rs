@@ -46,14 +46,14 @@ impl SfqHasher {
     const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
     #[inline(always)]
-    fn new(seed: u64) -> Self {
+    const fn new(seed: u64) -> Self {
         Self {
             state: Self::FNV_OFFSET ^ seed,
         }
     }
 
     #[inline(always)]
-    fn mix(mut h: u64) -> u64 {
+    const fn mix(mut h: u64) -> u64 {
         h ^= h >> 33;
         h = h.wrapping_mul(0xff51_afd7_ed55_8ccd);
         h ^= h >> 33;
@@ -97,7 +97,7 @@ pub struct QueuedRequest {
 
 impl QueuedRequest {
     #[must_use]
-    pub fn new(flow_hash: u64, size: usize, id: u64, enqueue_time: u64) -> Self {
+    pub const fn new(flow_hash: u64, size: usize, id: u64, enqueue_time: u64) -> Self {
         Self {
             flow_hash,
             size,
@@ -135,7 +135,7 @@ struct FlowQueue<const DEPTH: usize> {
 impl<const DEPTH: usize> FlowQueue<DEPTH> {
     const NONE: Option<QueuedRequest> = None;
 
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             buffer: [Self::NONE; DEPTH],
             head: 0,
@@ -147,21 +147,21 @@ impl<const DEPTH: usize> FlowQueue<DEPTH> {
     }
 
     #[inline(always)]
-    fn is_empty(&self) -> bool {
+    const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     #[inline(always)]
-    fn is_full(&self) -> bool {
+    const fn is_full(&self) -> bool {
         self.len >= DEPTH
     }
 
     #[inline(always)]
-    fn len(&self) -> usize {
+    const fn len(&self) -> usize {
         self.len
     }
 
-    fn push(&mut self, req: QueuedRequest) -> bool {
+    const fn push(&mut self, req: QueuedRequest) -> bool {
         if self.is_full() {
             return false;
         }
@@ -171,7 +171,7 @@ impl<const DEPTH: usize> FlowQueue<DEPTH> {
         true
     }
 
-    fn pop(&mut self) -> Option<QueuedRequest> {
+    const fn pop(&mut self) -> Option<QueuedRequest> {
         if self.is_empty() {
             return None;
         }
@@ -182,7 +182,7 @@ impl<const DEPTH: usize> FlowQueue<DEPTH> {
     }
 
     #[inline(always)]
-    fn peek(&self) -> Option<&QueuedRequest> {
+    const fn peek(&self) -> Option<&QueuedRequest> {
         if self.is_empty() {
             None
         } else {
@@ -351,26 +351,26 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
     /// Check if queue is empty
     #[inline(always)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.total_len == 0
     }
 
     /// Get total number of queued requests
     #[inline(always)]
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.total_len
     }
 
     /// Rotate hash seed (call periodically for `DoS` resistance)
-    pub fn rotate_seed(&mut self, new_seed: u64) {
+    pub const fn rotate_seed(&mut self, new_seed: u64) {
         self.hash_seed = new_seed;
         // Note: existing queued items keep their original queue assignment
     }
 
     /// Get statistics
     #[must_use]
-    pub fn stats(&self) -> SfqStats {
+    pub const fn stats(&self) -> SfqStats {
         SfqStats {
             enqueued: self.stats_enqueued,
             dequeued: self.stats_dequeued,
@@ -550,20 +550,20 @@ impl<const QUEUES: usize, const DEPTH: usize> WeightedSfq<QUEUES, DEPTH> {
     /// Check if queue is empty
     #[inline(always)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
     /// Get total number of queued requests
     #[inline(always)]
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.inner.len()
     }
 
     /// Get statistics
     #[must_use]
-    pub fn stats(&self) -> SfqStats {
+    pub const fn stats(&self) -> SfqStats {
         self.inner.stats()
     }
 }
@@ -634,7 +634,7 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
 
     /// Get shard index from flow hash
     #[inline(always)]
-    fn shard_index(flow_hash: u64) -> usize {
+    const fn shard_index(flow_hash: u64) -> usize {
         // Use upper bits for shard selection (lower bits used for queue selection)
         ((flow_hash >> 32) as usize) & (SHARDS - 1)
     }
@@ -682,7 +682,7 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
 
     /// Get statistics for a specific shard
     #[must_use]
-    pub fn shard_stats(&self, shard_idx: usize) -> Option<SfqStats> {
+    pub const fn shard_stats(&self, shard_idx: usize) -> Option<SfqStats> {
         if shard_idx < SHARDS {
             Some(self.shards[shard_idx].queue.stats())
         } else {
@@ -707,7 +707,7 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
     /// Get mutable reference to a specific shard
     ///
     /// Useful for per-thread ownership pattern.
-    pub fn shard_mut(
+    pub const fn shard_mut(
         &mut self,
         shard_idx: usize,
     ) -> Option<&mut StochasticFairQueue<QUEUES, DEPTH>> {
@@ -793,8 +793,7 @@ mod tests {
         // The test mainly verifies both flows eventually get served
         assert!(
             consecutive_same <= 19,
-            "Unexpected consecutive count: {}",
-            consecutive_same
+            "Unexpected consecutive count: {consecutive_same}"
         );
     }
 
@@ -821,7 +820,7 @@ mod tests {
         let flow = 12345u64;
         let _q1 = sfq.hash_to_queue(flow);
 
-        sfq.rotate_seed(0x0E45_EED_9999);
+        sfq.rotate_seed(0x00E4_5EED_9999);
         let _q2 = sfq.hash_to_queue(flow);
 
         // Queue assignment should (likely) change with different seed
@@ -836,7 +835,7 @@ mod tests {
 
         // Enqueue requests that will distribute across shards
         for i in 0..20 {
-            let flow_hash = (i as u64) << 32 | (i as u64); // Spread across shards
+            let flow_hash = i << 32 | i; // Spread across shards
             assert!(sfq.enqueue(QueuedRequest::new(flow_hash, 100, i, 0)));
         }
 
