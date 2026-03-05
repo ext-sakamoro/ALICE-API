@@ -13,6 +13,7 @@ publish = false
 [features]
 default = ["std"]
 std = []
+ffi = ["std"]     # C/C++/C# FFI bindings
 auth = ["dep:alice-auth"]
 crypto = ["dep:alice-crypto"]
 secure = ["auth", "crypto"]

@@ -7,7 +7,7 @@
 //!
 //! - **O(1) enqueue/dequeue**: No priority queue overhead
 //! - **Probabilistic fairness**: Flows unlikely to collide with same hash
-//! - **DoS resistant**: Hash seed rotation prevents targeted attacks
+//! - **`DoS` resistant**: Hash seed rotation prevents targeted attacks
 //! - **Memory efficient**: Fixed number of queues regardless of flow count
 //!
 //! ## Algorithm
@@ -21,13 +21,13 @@
 //!
 //! ## Performance Optimizations
 //!
-//! - **Cache-Line Sharding**: Each FlowQueue is aligned to 64-byte cache lines
+//! - **Cache-Line Sharding**: Each `FlowQueue` is aligned to 64-byte cache lines
 //!   to prevent false sharing in multi-threaded scenarios.
 //! - **Sharded SFQ**: `ShardedSfq` divides queues across CPU cores for zero contention.
 
 use core::hash::Hasher;
 
-/// Cache line size (64 bytes on most x86_64/ARM64)
+/// Cache line size (64 bytes on most `x86_64/ARM64`)
 #[allow(dead_code)]
 const CACHE_LINE_SIZE: usize = 64;
 
@@ -42,8 +42,8 @@ struct SfqHasher {
 }
 
 impl SfqHasher {
-    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
     #[inline(always)]
     fn new(seed: u64) -> Self {
@@ -55,9 +55,9 @@ impl SfqHasher {
     #[inline(always)]
     fn mix(mut h: u64) -> u64 {
         h ^= h >> 33;
-        h = h.wrapping_mul(0xff51afd7ed558ccd);
+        h = h.wrapping_mul(0xff51_afd7_ed55_8ccd);
         h ^= h >> 33;
-        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+        h = h.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
         h ^= h >> 33;
         h
     }
@@ -96,6 +96,7 @@ pub struct QueuedRequest {
 }
 
 impl QueuedRequest {
+    #[must_use]
     pub fn new(flow_hash: u64, size: usize, id: u64, enqueue_time: u64) -> Self {
         Self {
             flow_hash,
@@ -220,7 +221,7 @@ pub struct StochasticFairQueue<const QUEUES: usize, const DEPTH: usize> {
     current: usize,
     /// Quantum: bytes added to deficit each round
     quantum: usize,
-    /// Hash seed (rotate periodically for DoS resistance)
+    /// Hash seed (rotate periodically for `DoS` resistance)
     hash_seed: u64,
     /// Total requests in all queues
     total_len: usize,
@@ -237,6 +238,7 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
     ///
     /// # Arguments
     /// * `quantum` - Bytes to add to deficit counter each round (e.g., 1500 for MTU)
+    #[must_use]
     pub fn new(quantum: usize) -> Self {
         Self {
             queues: core::array::from_fn(|_| FlowQueue::new()),
@@ -251,6 +253,7 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
     }
 
     /// Create with custom hash seed
+    #[must_use]
     pub fn with_seed(quantum: usize, seed: u64) -> Self {
         let mut sfq = Self::new(quantum);
         sfq.hash_seed = seed;
@@ -284,6 +287,10 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
     /// Dequeue the next request using Deficit Round Robin
     ///
     /// Returns `None` if all queues are empty
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal queue state is inconsistent (peek succeeds but pop fails).
     pub fn dequeue(&mut self) -> Option<QueuedRequest> {
         if self.total_len == 0 {
             return None;
@@ -343,23 +350,26 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
 
     /// Check if queue is empty
     #[inline(always)]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.total_len == 0
     }
 
     /// Get total number of queued requests
     #[inline(always)]
+    #[must_use]
     pub fn len(&self) -> usize {
         self.total_len
     }
 
-    /// Rotate hash seed (call periodically for DoS resistance)
+    /// Rotate hash seed (call periodically for `DoS` resistance)
     pub fn rotate_seed(&mut self, new_seed: u64) {
         self.hash_seed = new_seed;
         // Note: existing queued items keep their original queue assignment
     }
 
     /// Get statistics
+    #[must_use]
     pub fn stats(&self) -> SfqStats {
         SfqStats {
             enqueued: self.stats_enqueued,
@@ -371,7 +381,7 @@ impl<const QUEUES: usize, const DEPTH: usize> StochasticFairQueue<QUEUES, DEPTH>
 
     /// Get per-queue lengths (for monitoring)
     pub fn queue_lengths(&self) -> impl Iterator<Item = usize> + '_ {
-        self.queues.iter().map(|q| q.len())
+        self.queues.iter().map(FlowQueue::len)
     }
 }
 
@@ -439,6 +449,7 @@ impl<const QUEUES: usize, const DEPTH: usize> WeightedSfq<QUEUES, DEPTH> {
     /// # Arguments
     /// * `quantum` - Base quantum in bytes per DRR round
     /// * `default_weight` - Initial weight assigned to all queues
+    #[must_use]
     pub fn new(quantum: usize, default_weight: u32) -> Self {
         Self {
             inner: StochasticFairQueue::new(quantum),
@@ -456,6 +467,7 @@ impl<const QUEUES: usize, const DEPTH: usize> WeightedSfq<QUEUES, DEPTH> {
     }
 
     /// Get weight for a flow's queue slot
+    #[must_use]
     pub fn get_weight(&self, flow_hash: u64) -> u32 {
         let idx = self.inner.hash_to_queue(flow_hash);
         self.weights[idx]
@@ -471,9 +483,13 @@ impl<const QUEUES: usize, const DEPTH: usize> WeightedSfq<QUEUES, DEPTH> {
     /// Dequeue with Weighted Deficit Round Robin (WDRR)
     ///
     /// Each queue's quantum is scaled by its weight:
-    ///   effective_quantum = base_quantum * weight
+    ///   `effective_quantum` = `base_quantum` * weight
     ///
     /// This ensures higher-weight flows receive proportionally more bandwidth.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal queue state is inconsistent (peek succeeds but pop fails).
     pub fn dequeue(&mut self) -> Option<QueuedRequest> {
         if self.inner.total_len == 0 {
             return None;
@@ -533,17 +549,20 @@ impl<const QUEUES: usize, const DEPTH: usize> WeightedSfq<QUEUES, DEPTH> {
 
     /// Check if queue is empty
     #[inline(always)]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
     /// Get total number of queued requests
     #[inline(always)]
+    #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
     /// Get statistics
+    #[must_use]
     pub fn stats(&self) -> SfqStats {
         self.inner.stats()
     }
@@ -605,6 +624,7 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
     ShardedSfq<SHARDS, QUEUES, DEPTH>
 {
     /// Create a new sharded SFQ
+    #[must_use]
     pub fn new(quantum: usize) -> Self {
         Self {
             shards: core::array::from_fn(|_| SfqShard::new(quantum)),
@@ -614,14 +634,14 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
 
     /// Get shard index from flow hash
     #[inline(always)]
-    fn shard_index(&self, flow_hash: u64) -> usize {
+    fn shard_index(flow_hash: u64) -> usize {
         // Use upper bits for shard selection (lower bits used for queue selection)
         ((flow_hash >> 32) as usize) & (SHARDS - 1)
     }
 
     /// Enqueue a request to the appropriate shard
     pub fn enqueue(&mut self, req: QueuedRequest) -> bool {
-        let shard_idx = self.shard_index(req.flow_hash);
+        let shard_idx = Self::shard_index(req.flow_hash);
         self.shards[shard_idx].queue.enqueue(req)
     }
 
@@ -640,7 +660,7 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
     ///
     /// For single-threaded use or when thread affinity isn't needed.
     pub fn dequeue(&mut self) -> Option<QueuedRequest> {
-        for shard in self.shards.iter_mut() {
+        for shard in &mut self.shards {
             if let Some(req) = shard.queue.dequeue() {
                 return Some(req);
             }
@@ -649,16 +669,19 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
     }
 
     /// Get total length across all shards
+    #[must_use]
     pub fn len(&self) -> usize {
         self.shards.iter().map(|s| s.queue.len()).sum()
     }
 
     /// Check if all shards are empty
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.shards.iter().all(|s| s.queue.is_empty())
     }
 
     /// Get statistics for a specific shard
+    #[must_use]
     pub fn shard_stats(&self, shard_idx: usize) -> Option<SfqStats> {
         if shard_idx < SHARDS {
             Some(self.shards[shard_idx].queue.stats())
@@ -668,9 +691,10 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
     }
 
     /// Get aggregated statistics across all shards
+    #[must_use]
     pub fn stats(&self) -> SfqStats {
         let mut total = SfqStats::default();
-        for shard in self.shards.iter() {
+        for shard in &self.shards {
             let s = shard.queue.stats();
             total.enqueued += s.enqueued;
             total.dequeued += s.dequeued;
@@ -695,6 +719,7 @@ impl<const SHARDS: usize, const QUEUES: usize, const DEPTH: usize>
     }
 
     /// Get number of shards
+    #[must_use]
     pub const fn num_shards(&self) -> usize {
         SHARDS
     }

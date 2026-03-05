@@ -85,7 +85,11 @@ impl SpliceError {
 
 /// Create a pipe for splice operations
 ///
-/// Returns (read_fd, write_fd)
+/// Returns (`read_fd`, `write_fd`)
+///
+/// # Errors
+///
+/// Returns a `SpliceError` if the system call fails.
 pub fn create_pipe() -> Result<(c_int, c_int), SpliceError> {
     let mut fds: [c_int; 2] = [0; 2];
     let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
@@ -148,6 +152,10 @@ pub fn splice(
 }
 
 /// Fallback splice for non-Linux (uses read/write)
+///
+/// # Errors
+///
+/// Returns a `SpliceError` if the underlying read or write system call fails.
 #[cfg(not(target_os = "linux"))]
 pub fn splice(
     fd_in: c_int,
@@ -161,7 +169,7 @@ pub fn splice(
     let mut buf = [0u8; 8192];
     let to_read = len.min(buf.len());
 
-    let n_read = unsafe { libc::read(fd_in, buf.as_mut_ptr() as *mut c_void, to_read) };
+    let n_read = unsafe { libc::read(fd_in, buf.as_mut_ptr().cast::<c_void>(), to_read) };
     if n_read < 0 {
         return Err(SpliceError::from_errno(unsafe { *libc::__error() }));
     }
@@ -169,7 +177,7 @@ pub fn splice(
         return Ok(0);
     }
 
-    let n_write = unsafe { libc::write(fd_out, buf.as_ptr() as *const c_void, n_read as usize) };
+    let n_write = unsafe { libc::write(fd_out, buf.as_ptr().cast::<c_void>(), n_read as usize) };
     if n_write < 0 {
         return Err(SpliceError::from_errno(unsafe { *libc::__error() }));
     }
@@ -184,6 +192,10 @@ pub fn splice(
 /// * `in_fd` - Source file descriptor
 /// * `offset` - Starting offset in file (updated after call)
 /// * `count` - Bytes to send
+///
+/// # Errors
+///
+/// Returns a `SpliceError` if the system call fails.
 pub fn sendfile(
     out_fd: c_int,
     in_fd: c_int,
@@ -202,7 +214,7 @@ pub fn sendfile(
         let mut len = count as off_t;
         let off_val = offset.map_or(0, |o| *o);
         let result =
-            unsafe { libc::sendfile(in_fd, out_fd, off_val, &mut len, ptr::null_mut(), 0) };
+            unsafe { libc::sendfile(in_fd, out_fd, off_val, &raw mut len, ptr::null_mut(), 0) };
         if result == 0 || (result == -1 && len > 0) {
             len as ssize_t
         } else {
@@ -238,6 +250,10 @@ pub struct SplicePipe {
 
 impl SplicePipe {
     /// Create a new splice pipe
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SpliceError` if pipe creation fails.
     pub fn new() -> Result<Self, SpliceError> {
         let (read_fd, write_fd) = create_pipe()?;
         Ok(Self { read_fd, write_fd })
@@ -245,12 +261,14 @@ impl SplicePipe {
 
     /// Get read fd
     #[inline(always)]
+    #[must_use]
     pub fn read_fd(&self) -> c_int {
         self.read_fd
     }
 
     /// Get write fd
     #[inline(always)]
+    #[must_use]
     pub fn write_fd(&self) -> c_int {
         self.write_fd
     }
@@ -281,6 +299,10 @@ pub struct ZeroCopyForwarder {
 
 impl ZeroCopyForwarder {
     /// Create a new forwarder
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SpliceError` if pipe creation fails.
     pub fn new() -> Result<Self, SpliceError> {
         Ok(Self {
             pipe: SplicePipe::new()?,
@@ -298,6 +320,10 @@ impl ZeroCopyForwarder {
     ///
     /// # Returns
     /// Number of bytes actually forwarded
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SpliceError` if the splice system call fails.
     pub fn forward(&mut self, client_fd: c_int, backend_fd: c_int, len: usize) -> SpliceResult {
         let mut total = 0usize;
         let mut remaining = len;
@@ -344,6 +370,10 @@ impl ZeroCopyForwarder {
     }
 
     /// Forward response from backend to client
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SpliceError` if the splice system call fails.
     pub fn forward_response(
         &mut self,
         backend_fd: c_int,
@@ -355,6 +385,7 @@ impl ZeroCopyForwarder {
     }
 
     /// Get statistics
+    #[must_use]
     pub fn stats(&self) -> (u64, u64) {
         (self.bytes_forwarded, self.forward_count)
     }
@@ -382,6 +413,7 @@ pub struct SpliceOp {
 }
 
 impl SpliceOp {
+    #[must_use]
     pub fn new(fd_in: c_int, fd_out: c_int, len: usize) -> Self {
         Self { fd_in, fd_out, len }
     }
@@ -430,6 +462,10 @@ pub struct BatchedForwarder<const MAX_OPS: usize> {
 
 impl<const MAX_OPS: usize> BatchedForwarder<MAX_OPS> {
     /// Create a new batched forwarder
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SpliceError` if pipe creation fails.
     pub fn new() -> Result<Self, SpliceError> {
         const NONE: Option<SpliceOp> = None;
         Ok(Self {
@@ -456,12 +492,14 @@ impl<const MAX_OPS: usize> BatchedForwarder<MAX_OPS> {
 
     /// Get number of pending operations
     #[inline(always)]
+    #[must_use]
     pub fn pending(&self) -> usize {
         self.count
     }
 
     /// Check if batch is full
     #[inline(always)]
+    #[must_use]
     pub fn is_full(&self) -> bool {
         self.count >= MAX_OPS
     }
@@ -552,6 +590,7 @@ impl<const MAX_OPS: usize> BatchedForwarder<MAX_OPS> {
     }
 
     /// Get lifetime statistics
+    #[must_use]
     pub fn stats(&self) -> (u64, u64) {
         (self.total_bytes, self.total_ops)
     }
@@ -577,6 +616,7 @@ pub enum HttpMethod {
 }
 
 impl HttpMethod {
+    #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Self {
         match bytes {
             b"GET" => HttpMethod::Get,
@@ -603,7 +643,8 @@ pub struct RequestLine<'a> {
 
 /// Parse just the request line for routing (no body parsing)
 ///
-/// Returns (RequestLine, header_end_offset) or None if incomplete
+/// Returns (`RequestLine`, `header_end_offset`) or None if incomplete
+#[must_use]
 pub fn parse_request_line(buf: &[u8]) -> Option<(RequestLine<'_>, usize)> {
     // Find first line ending
     let line_end = buf.iter().position(|&b| b == b'\r' || b == b'\n')?;
@@ -627,6 +668,7 @@ pub fn parse_request_line(buf: &[u8]) -> Option<(RequestLine<'_>, usize)> {
 }
 
 /// Find Content-Length header value
+#[must_use]
 pub fn find_content_length(headers: &[u8]) -> Option<usize> {
     // Simple linear search for "Content-Length: "
     const NEEDLE: &[u8] = b"Content-Length:";
@@ -657,6 +699,7 @@ pub fn find_content_length(headers: &[u8]) -> Option<usize> {
 }
 
 /// Find header end (double CRLF)
+#[must_use]
 pub fn find_header_end(buf: &[u8]) -> Option<usize> {
     for i in 0..buf.len().saturating_sub(3) {
         if &buf[i..i + 4] == b"\r\n\r\n" {

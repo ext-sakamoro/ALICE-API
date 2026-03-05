@@ -2,6 +2,16 @@
 
 All notable changes to ALICE-API will be documented in this file.
 
+## [0.1.1] - 2026-03-04
+
+### Added
+- `ffi` — 20 `extern "C"` FFI functions (GcraCell, Gateway, SFQ)
+- Unity C# bindings (`bindings/unity/AliceApi.cs`) — 20 DllImport + RAII classes
+- UE5 C++ header (`bindings/ue5/AliceApi.h`) — 20 extern C + RAII wrappers
+
+### Fixed
+- `cargo fmt` trailing whitespace in source files
+
 ## [0.1.0] - 2026-02-23
 
 ### Added

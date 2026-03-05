@@ -74,6 +74,7 @@ pub struct Backend {
 }
 
 impl Backend {
+    #[must_use]
     pub fn new(id: u32, host: &[u8], port: u16) -> Self {
         let mut host_buf = [0u8; 64];
         let len = host.len().min(64);
@@ -89,6 +90,7 @@ impl Backend {
         }
     }
 
+    #[must_use]
     pub fn host(&self) -> &[u8] {
         &self.host[..self.host_len]
     }
@@ -112,6 +114,7 @@ pub struct Route {
 }
 
 impl Route {
+    #[must_use]
     pub fn new(path_prefix: &[u8]) -> Self {
         let mut prefix_buf = [0u8; 128];
         let len = path_prefix.len().min(128);
@@ -127,6 +130,7 @@ impl Route {
         }
     }
 
+    #[must_use]
     pub fn path_prefix(&self) -> &[u8] {
         &self.path_prefix[..self.prefix_len]
     }
@@ -138,6 +142,7 @@ impl Route {
         }
     }
 
+    #[must_use]
     pub fn matches(&self, path: &[u8], method: HttpMethod) -> bool {
         // Check path prefix
         if path.len() < self.prefix_len {
@@ -189,6 +194,7 @@ pub struct GatewayRequest {
 }
 
 impl GatewayRequest {
+    #[must_use]
     pub fn path(&self) -> &[u8] {
         &self.path[..self.path_len]
     }
@@ -225,8 +231,8 @@ pub enum GatewayDecision {
 struct FnvHash(u64);
 
 impl FnvHash {
-    const OFFSET: u64 = 0xcbf29ce484222325;
-    const PRIME: u64 = 0x100000001b3;
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
 
     #[inline(always)]
     fn new() -> Self {
@@ -246,9 +252,9 @@ impl FnvHash {
         // Avalanche mixer
         let mut h = self.0;
         h ^= h >> 33;
-        h = h.wrapping_mul(0xff51afd7ed558ccd);
+        h = h.wrapping_mul(0xff51_afd7_ed55_8ccd);
         h ^= h >> 33;
-        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+        h = h.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
         h ^= h >> 33;
         h
     }
@@ -312,6 +318,7 @@ impl<
     const NONE_BACKEND: Option<Backend> = None;
 
     /// Create a new gateway with configuration
+    #[must_use]
     pub fn new(config: GatewayConfig) -> Self {
         Self {
             rate_limiter: GcraRegistry::new(config.rate_limit, config.rate_burst),
@@ -365,6 +372,7 @@ impl<
 
     /// Hash client identifier (IP, API key, etc.)
     #[inline(always)]
+    #[must_use]
     pub fn hash_client(identifier: &[u8]) -> u64 {
         let mut h = FnvHash::new();
         h.write(identifier);
@@ -395,18 +403,14 @@ impl<
         }
 
         // 3. Route matching
-        let route = match self.find_route(request.path(), request.method) {
-            Some(r) => r,
-            None => {
-                self.stats.requests_not_found += 1;
-                return GatewayDecision::NotFound;
-            }
+        let Some(route) = self.find_route(request.path(), request.method) else {
+            self.stats.requests_not_found += 1;
+            return GatewayDecision::NotFound;
         };
 
         // 4. Select backend
-        let backend_id = match route.next_backend() {
-            Some(id) => id,
-            None => return GatewayDecision::InternalError,
+        let Some(backend_id) = route.next_backend() else {
+            return GatewayDecision::InternalError;
         };
 
         // Verify backend exists and is healthy

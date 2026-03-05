@@ -121,6 +121,8 @@
 
 #[cfg(feature = "analytics")]
 pub mod analytics_bridge;
+#[cfg(feature = "ffi")]
+pub mod ffi;
 pub mod gateway;
 pub mod gcra;
 #[cfg(any(feature = "auth", feature = "crypto"))]
@@ -203,10 +205,7 @@ pub const SERVER_HEADER: &str = concat!("ALICE/", env!("CARGO_PKG_VERSION"));
 /// ```
 #[must_use]
 pub const fn response_headers() -> [(&'static str, &'static str); 2] {
-    [
-        ("X-Powered-By", X_POWERED_BY),
-        ("Server", SERVER_HEADER),
-    ]
+    [("X-Powered-By", X_POWERED_BY), ("Server", SERVER_HEADER)]
 }
 
 // ============================================================================

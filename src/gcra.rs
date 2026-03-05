@@ -14,7 +14,7 @@
 //! ## CRDT Properties
 //!
 //! - State: single timestamp (TAT)
-//! - Merge: max(TAT_a, TAT_b)
+//! - Merge: `max(TAT_a`, `TAT_b`)
 //! - Monotonic: TAT only increases
 //! - Convergent: all replicas converge to same max
 //!
@@ -31,7 +31,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 // Atomic Fetch-Max Helper (Lock-Free)
 // ============================================================================
 
-/// Atomically update value to max(current, new_value) using Relaxed ordering.
+/// Atomically update value to max(current, `new_value`) using Relaxed ordering.
 /// Returns the previous value.
 ///
 /// This is safe for monotonically increasing values like TAT.
@@ -65,7 +65,7 @@ pub struct GcraCell {
     tat: AtomicU64,
     /// Time between tokens: τ = 1/rate (nanoseconds)
     emission_interval: u64,
-    /// Burst tolerance: σ = burst_size * emission_interval
+    /// Burst tolerance: σ = `burst_size` * `emission_interval`
     burst_tolerance: u64,
 }
 
@@ -98,6 +98,7 @@ impl GcraCell {
     /// // 100 requests/sec with burst of 10
     /// let cell = GcraCell::new(100.0, 10);
     /// ```
+    #[must_use]
     pub fn new(rate: f64, burst: u32) -> Self {
         let emission_interval = (NANOS_PER_SEC as f64 / rate) as u64;
         let burst_tolerance = emission_interval * burst as u64;
@@ -114,6 +115,7 @@ impl GcraCell {
     /// # Arguments
     /// * `emission_interval_ns` - Nanoseconds between tokens
     /// * `burst_tolerance_ns` - Maximum burst tolerance in nanoseconds
+    #[must_use]
     pub fn with_params(emission_interval_ns: u64, burst_tolerance_ns: u64) -> Self {
         Self {
             tat: AtomicU64::new(0),
@@ -125,9 +127,9 @@ impl GcraCell {
     /// Check if a request should be allowed and update state atomically
     ///
     /// This is the core GCRA algorithm:
-    /// 1. new_tat = max(tat, now) + emission_interval
-    /// 2. allow_at = new_tat - burst_tolerance
-    /// 3. if now >= allow_at: allow and update tat = new_tat
+    /// 1. `new_tat` = max(tat, now) + `emission_interval`
+    /// 2. `allow_at` = `new_tat` - `burst_tolerance`
+    /// 3. if now >= `allow_at`: allow and update tat = `new_tat`
     ///    else: deny
     ///
     /// Uses Relaxed atomics for performance - safe because TAT is monotonically increasing.
@@ -148,24 +150,18 @@ impl GcraCell {
                 // Request is allowed - try to update TAT atomically
                 // Use Relaxed ordering: TAT monotonically increases, so concurrent
                 // updates are safe (worst case: we retry with higher value)
-                match self.tat.compare_exchange_weak(
-                    tat,
-                    new_tat,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => {
-                        // Success! Calculate reset time
-                        let reset_after = new_tat.saturating_sub(now_ns);
-                        return GcraDecision::Allow {
-                            reset_after_ns: reset_after,
-                        };
-                    }
-                    Err(_) => {
-                        // Another thread updated TAT, retry with new value
-                        continue;
-                    }
+                if self
+                    .tat
+                    .compare_exchange_weak(tat, new_tat, Ordering::Relaxed, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    // Success! Calculate reset time
+                    let reset_after = new_tat.saturating_sub(now_ns);
+                    return GcraDecision::Allow {
+                        reset_after_ns: reset_after,
+                    };
                 }
+                // Another thread updated TAT, retry with new value
             } else {
                 // Request denied - no state update needed
                 let retry_after = allow_at.saturating_sub(now_ns);
@@ -196,9 +192,9 @@ impl GcraCell {
     /// This is the key to distributed rate limiting:
     /// - Each node maintains local TAT
     /// - Periodically, nodes exchange and merge TATs
-    /// - max() ensures convergence and consistency
+    /// - `max()` ensures convergence and consistency
     ///
-    /// Uses the optimized fetch_max pattern with Relaxed ordering.
+    /// Uses the optimized `fetch_max` pattern with Relaxed ordering.
     #[inline(always)]
     pub fn merge(&self, other_tat: u64) {
         fetch_max_relaxed(&self.tat, other_tat);
@@ -248,6 +244,7 @@ pub struct GcraRegistry<const CAPACITY: usize> {
 
 impl<const CAPACITY: usize> GcraRegistry<CAPACITY> {
     /// Create a new registry with default rate limit parameters
+    #[must_use]
     pub fn new(default_rate: f64, default_burst: u32) -> Self {
         Self {
             slots: core::array::from_fn(|_| None),
