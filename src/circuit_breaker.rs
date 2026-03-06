@@ -1,7 +1,7 @@
 //! サーキットブレーカーパターン
 //!
 //! バックエンド障害時の連鎖障害を防止。
-//! Closed → Open → HalfOpen の3状態遷移。
+//! Closed → Open → `HalfOpen` の3状態遷移。
 //! `no_std` 互換、ヒープ不使用。
 
 // ============================================================================
@@ -32,7 +32,7 @@ pub struct BreakerConfig {
     pub min_requests: u32,
     /// Open 状態の持続時間（ナノ秒）。
     pub open_duration_ns: u64,
-    /// HalfOpen 中に通すテストリクエスト数。
+    /// `HalfOpen` 中に通すテストリクエスト数。
     pub half_open_max_requests: u32,
 }
 
@@ -64,9 +64,9 @@ pub struct CircuitBreaker {
     failures: u32,
     /// Open に遷移した時刻（ns）。
     opened_at_ns: u64,
-    /// HalfOpen 中のテストリクエスト数。
+    /// `HalfOpen` 中のテストリクエスト数。
     half_open_requests: u32,
-    /// HalfOpen 中の成功数。
+    /// `HalfOpen` 中の成功数。
     half_open_successes: u32,
 }
 
@@ -97,7 +97,7 @@ impl CircuitBreaker {
     /// `now_ns` は現在のタイムスタンプ（ナノ秒）。
     /// `true` = リクエスト許可、 `false` = 遮断。
     #[must_use]
-    pub fn allow(&mut self, now_ns: u64) -> bool {
+    pub const fn allow(&mut self, now_ns: u64) -> bool {
         match self.state {
             BreakerState::Closed => true,
             BreakerState::Open => {
@@ -111,14 +111,12 @@ impl CircuitBreaker {
                     false
                 }
             }
-            BreakerState::HalfOpen => {
-                self.half_open_requests < self.config.half_open_max_requests
-            }
+            BreakerState::HalfOpen => self.half_open_requests < self.config.half_open_max_requests,
         }
     }
 
     /// 成功を記録。
-    pub fn record_success(&mut self) {
+    pub const fn record_success(&mut self) {
         match self.state {
             BreakerState::Closed => {
                 self.successes += 1;
@@ -164,13 +162,13 @@ impl CircuitBreaker {
     }
 
     /// Open 状態へ遷移。
-    fn trip(&mut self, now_ns: u64) {
+    const fn trip(&mut self, now_ns: u64) {
         self.state = BreakerState::Open;
         self.opened_at_ns = now_ns;
     }
 
     /// Closed 状態にリセット。
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.state = BreakerState::Closed;
         self.successes = 0;
         self.failures = 0;
@@ -226,7 +224,7 @@ impl<const N: usize> BreakerRegistry<N> {
     }
 
     /// バックエンドを登録。
-    pub fn register(&mut self, backend_id: u32) -> bool {
+    pub const fn register(&mut self, backend_id: u32) -> bool {
         if self.count >= N {
             return false;
         }
@@ -255,8 +253,7 @@ impl<const N: usize> BreakerRegistry<N> {
     /// リクエスト許可判定。
     #[must_use]
     pub fn allow(&mut self, backend_id: u32, now_ns: u64) -> bool {
-        self.get_mut(backend_id)
-            .is_some_and(|cb| cb.allow(now_ns))
+        self.get_mut(backend_id).is_some_and(|cb| cb.allow(now_ns))
     }
 
     /// 登録数。

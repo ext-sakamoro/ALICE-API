@@ -42,8 +42,8 @@ impl BackendEntry {
 
 /// Smooth Weighted Round Robin (nginx方式)。
 ///
-/// 各バックエンドに effective_weight を持ち、選択のたびに自身の weight を加算、
-/// 選択されたバックエンドは total_weight を減算。均等に分散される。
+/// 各バックエンドに `effective_weight` を持ち、選択のたびに自身の weight を加算、
+/// 選択されたバックエンドは `total_weight` を減算。均等に分散される。
 pub struct WeightedRoundRobin<const N: usize> {
     backends: [Option<BackendEntry>; N],
     count: usize,
@@ -372,7 +372,8 @@ pub fn jump_consistent_hash(mut key: u64, num_buckets: u32) -> u32 {
     while j < num_buckets as i64 {
         b = j;
         key = key.wrapping_mul(2_862_933_555_777_941_757).wrapping_add(1);
-        j = ((b.wrapping_add(1)) as f64 * (((1i64 << 31) as f64) / ((key >> 33).wrapping_add(1) as f64))) as i64;
+        j = ((b.wrapping_add(1)) as f64
+            * (((1i64 << 31) as f64) / ((key >> 33).wrapping_add(1) as f64))) as i64;
     }
 
     b as u32

@@ -134,6 +134,7 @@ pub mod middleware;
 pub mod queue_bridge;
 pub mod routing;
 pub mod sfq;
+pub mod transform;
 
 /// Prelude for convenient imports
 pub mod prelude {
@@ -150,10 +151,15 @@ pub mod prelude {
         QueuedRequest, SfqShard, SfqStats, ShardedSfq, StochasticFairQueue, WeightedSfq,
     };
 
-    pub use crate::circuit_breaker::{BreakerConfig, BreakerRegistry, BreakerState, CircuitBreaker};
+    pub use crate::circuit_breaker::{
+        BreakerConfig, BreakerRegistry, BreakerState, CircuitBreaker,
+    };
     pub use crate::health::{HealthChecker, HealthConfig, HealthRegistry};
     pub use crate::loadbalancer::{
         BackendEntry, ConsistentHash, LeastConnections, WeightedRoundRobin,
+    };
+    pub use crate::transform::{
+        HeaderOp, HeaderRule, PathOp, PathRule, RequestTransform, ResponseTransform, StatusRewrite,
     };
 
     #[cfg(feature = "auth")]

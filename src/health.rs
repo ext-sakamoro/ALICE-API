@@ -141,7 +141,7 @@ impl<const WINDOW: usize> HealthChecker<WINDOW> {
 
     /// 次のプローブ実行可能時刻か。
     #[must_use]
-    pub fn should_probe(&self, now_ns: u64) -> bool {
+    pub const fn should_probe(&self, now_ns: u64) -> bool {
         now_ns.saturating_sub(self.last_probe_ns) >= self.config.interval_ns
     }
 
@@ -153,7 +153,7 @@ impl<const WINDOW: usize> HealthChecker<WINDOW> {
     }
 
     /// 強制リセット。
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.results = [false; WINDOW];
         self.write_pos = 0;
         self.recorded = 0;
@@ -187,7 +187,7 @@ impl<const N: usize, const WINDOW: usize> HealthRegistry<N, WINDOW> {
     }
 
     /// バックエンドを登録。
-    pub fn register(&mut self, backend_id: u32) -> bool {
+    pub const fn register(&mut self, backend_id: u32) -> bool {
         if self.count >= N {
             return false;
         }
@@ -325,9 +325,9 @@ mod tests {
         hc.record(false, 400);
         assert!(!hc.is_healthy());
 
-        hc.record(true, 500);  // 連続1
+        hc.record(true, 500); // 連続1
         hc.record(false, 600); // リセット
-        hc.record(true, 700);  // 連続1
+        hc.record(true, 700); // 連続1
         assert!(!hc.is_healthy());
     }
 
@@ -354,17 +354,17 @@ mod tests {
     fn should_probe_interval() {
         let hc = HealthChecker::<4>::new(test_config());
         // last_probe_ns=0, interval=1000
-        assert!(!hc.should_probe(500));  // 500 < 1000 → false
-        assert!(hc.should_probe(1000));  // 1000 >= 1000 → true
-        assert!(hc.should_probe(2000));  // 2000 >= 1000 → true
+        assert!(!hc.should_probe(500)); // 500 < 1000 → false
+        assert!(hc.should_probe(1000)); // 1000 >= 1000 → true
+        assert!(hc.should_probe(2000)); // 2000 >= 1000 → true
     }
 
     #[test]
     fn should_probe_after_record() {
         let mut hc = HealthChecker::<4>::new(test_config());
         hc.record(true, 5000);
-        assert!(!hc.should_probe(5500));  // 500ns < 1000ns interval
-        assert!(hc.should_probe(6000));   // 1000ns >= interval
+        assert!(!hc.should_probe(5500)); // 500ns < 1000ns interval
+        assert!(hc.should_probe(6000)); // 1000ns >= interval
     }
 
     #[test]
