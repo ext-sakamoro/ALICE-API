@@ -22,6 +22,27 @@
 use core::ffi::c_int;
 use core::ptr;
 
+/// クロスプラットフォーム errno 取得。
+///
+/// # Safety
+///
+/// libc の errno アクセスは OS 依存。
+#[inline]
+unsafe fn get_errno() -> c_int {
+    #[cfg(target_os = "macos")]
+    {
+        *libc::__error()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        *libc::__errno_location()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        0
+    }
+}
+
 // Re-export libc types for users
 pub use libc::{c_void, off_t, size_t, ssize_t};
 
@@ -94,7 +115,7 @@ pub fn create_pipe() -> Result<(c_int, c_int), SpliceError> {
     let mut fds: [c_int; 2] = [0; 2];
     let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
     if ret < 0 {
-        Err(SpliceError::from_errno(unsafe { *libc::__error() }))
+        Err(SpliceError::from_errno(unsafe { get_errno() }))
     } else {
         Ok(fds.into())
     }
@@ -106,7 +127,7 @@ pub fn create_pipe2(flags: c_int) -> Result<(c_int, c_int), SpliceError> {
     let mut fds: [c_int; 2] = [0; 2];
     let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), flags) };
     if ret < 0 {
-        Err(SpliceError::from_errno(unsafe { *libc::__error() }))
+        Err(SpliceError::from_errno(unsafe { get_errno() }))
     } else {
         Ok(fds.into())
     }
@@ -145,7 +166,7 @@ pub fn splice(
     let ret = unsafe { libc::splice(fd_in, off_in_ptr, fd_out, off_out_ptr, len, flags) };
 
     if ret < 0 {
-        Err(SpliceError::from_errno(unsafe { *libc::__error() }))
+        Err(SpliceError::from_errno(unsafe { get_errno() }))
     } else {
         Ok(ret as usize)
     }
@@ -171,7 +192,7 @@ pub fn splice(
 
     let n_read = unsafe { libc::read(fd_in, buf.as_mut_ptr().cast::<c_void>(), to_read) };
     if n_read < 0 {
-        return Err(SpliceError::from_errno(unsafe { *libc::__error() }));
+        return Err(SpliceError::from_errno(unsafe { get_errno() }));
     }
     if n_read == 0 {
         return Ok(0);
@@ -179,7 +200,7 @@ pub fn splice(
 
     let n_write = unsafe { libc::write(fd_out, buf.as_ptr().cast::<c_void>(), n_read as usize) };
     if n_write < 0 {
-        return Err(SpliceError::from_errno(unsafe { *libc::__error() }));
+        return Err(SpliceError::from_errno(unsafe { get_errno() }));
     }
 
     Ok(n_write as usize)
@@ -230,7 +251,7 @@ pub fn sendfile(
     };
 
     if ret < 0 {
-        Err(SpliceError::from_errno(unsafe { *libc::__error() }))
+        Err(SpliceError::from_errno(unsafe { get_errno() }))
     } else {
         Ok(ret as usize)
     }
