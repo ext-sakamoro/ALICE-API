@@ -2,7 +2,7 @@
 name = "alice-api"
 version = "0.1.0"
 edition = "2021"
-authors = ["Moroya Sakamoto"]
+authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "High-performance API Gateway with Distributed Rate Limiting and Zero-Copy Routing"
 license = "AGPL-3.0"
 repository = "https://github.com/anthropics/alice-api"
