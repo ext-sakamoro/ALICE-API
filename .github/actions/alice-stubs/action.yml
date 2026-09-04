@@ -1,0 +1,91 @@
+name: 'ALICE-API Optional Bridge Stubs'
+description: |
+  Create empty stub crates for ALICE-API's sibling path deps
+  (alice-auth, alice-crypto, alice-queue, alice-analytics)
+  so that ALICE-API can resolve its workspace-relative path deps in CI.
+  These crates are private to the local ALICE Eco-System and not on crates.io.
+
+  Canonical CI template: [[reference_alice_ci_canonical_template]]
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+
+        # ALICE-Auth stub
+        # ALICE-API uses alice-auth with default-features = false, features = ["std"]
+        mkdir -p "../ALICE-Auth/src"
+        cat > "../ALICE-Auth/Cargo.toml" <<'TOML'
+        [package]
+        name = "alice-auth"
+        version = "0.1.0"
+        edition = "2021"
+        license = "MIT OR Apache-2.0"
+
+        [features]
+        default = ["std"]
+        std = []
+
+        [lib]
+        path = "src/lib.rs"
+        TOML
+        : > "../ALICE-Auth/src/lib.rs"
+        echo "Created stub: alice-auth (license = MIT OR Apache-2.0, features = std)"
+
+        # ALICE-Crypto stub
+        # ALICE-API uses alice-crypto with default-features = false, features = ["std"]
+        mkdir -p "../ALICE-Crypto/src"
+        cat > "../ALICE-Crypto/Cargo.toml" <<'TOML'
+        [package]
+        name = "alice-crypto"
+        version = "0.1.0"
+        edition = "2021"
+        license = "MIT OR Apache-2.0"
+
+        [features]
+        default = ["std"]
+        std = []
+
+        [lib]
+        path = "src/lib.rs"
+        TOML
+        : > "../ALICE-Crypto/src/lib.rs"
+        echo "Created stub: alice-crypto (license = MIT OR Apache-2.0, features = std)"
+
+        # ALICE-Queue stub
+        # ALICE-API uses alice-queue with default features
+        mkdir -p "../ALICE-Queue/src"
+        cat > "../ALICE-Queue/Cargo.toml" <<'TOML'
+        [package]
+        name = "alice-queue"
+        version = "0.1.0"
+        edition = "2021"
+        license = "MIT OR Apache-2.0"
+
+        [lib]
+        path = "src/lib.rs"
+        TOML
+        : > "../ALICE-Queue/src/lib.rs"
+        echo "Created stub: alice-queue (license = MIT OR Apache-2.0)"
+
+        # ALICE-Analytics stub
+        # ALICE-API uses alice-analytics with default-features = false, features = ["std"]
+        mkdir -p "../ALICE-Analytics/src"
+        cat > "../ALICE-Analytics/Cargo.toml" <<'TOML'
+        [package]
+        name = "alice-analytics"
+        version = "0.1.0"
+        edition = "2021"
+        license = "MIT OR Apache-2.0"
+
+        [features]
+        default = ["std"]
+        std = []
+
+        [lib]
+        path = "src/lib.rs"
+        TOML
+        : > "../ALICE-Analytics/src/lib.rs"
+        echo "Created stub: alice-analytics (license = MIT OR Apache-2.0, features = std)"

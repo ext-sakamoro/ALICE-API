@@ -1,0 +1,38 @@
+[package]
+name = "alice-api-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[package.metadata.cargo-machete]
+# arbitrary is used via #[derive(Arbitrary)] which machete may miss
+ignored = ["arbitrary"]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.alice-api]
+path = ".."
+features = ["std"]
+
+[[bin]]
+name = "fuzz_parse_request_line"
+path = "fuzz_targets/fuzz_parse_request_line.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_find_content_length"
+path = "fuzz_targets/fuzz_find_content_length.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_route_match"
+path = "fuzz_targets/fuzz_route_match.rs"
+doc = false
+
+[workspace]
+members = ["."]

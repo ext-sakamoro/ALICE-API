@@ -37,6 +37,11 @@ alice-analytics = { path = "../ALICE-Analytics", optional = true, default-featur
 [dev-dependencies]
 criterion = "0.5"
 
+[package.metadata.cargo-machete]
+# `log` is used as an optional facade for downstream consumers (FFI callers)
+# even when no log macros are invoked directly in src/. Kept for API surface.
+ignored = ["log"]
+
 [[bench]]
 name = "api_bench"
 harness = false
