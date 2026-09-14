@@ -292,9 +292,7 @@ impl RequestTransform {
     /// ルールをクリア。
     pub fn clear(&mut self) {
         self.header_count = 0;
-        for slot in &mut self.header_rules {
-            *slot = None;
-        }
+        self.header_rules.fill(None);
         self.path_rule = None;
     }
 }
@@ -392,13 +390,9 @@ impl ResponseTransform {
     /// ルールをクリア。
     pub fn clear(&mut self) {
         self.header_count = 0;
-        for slot in &mut self.header_rules {
-            *slot = None;
-        }
+        self.header_rules.fill(None);
         self.status_count = 0;
-        for slot in &mut self.status_rewrites {
-            *slot = None;
-        }
+        self.status_rewrites.fill(None);
     }
 }
 
