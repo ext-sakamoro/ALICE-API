@@ -18,6 +18,15 @@ description: |
 
   Canonical CI template: [[reference_alice_ci_canonical_template]]
 
+inputs:
+  eco-token:
+    description: |
+      Fine-grained PAT (Contents: Read-only) covering ext-sakamoro/ALICE-Blockchain —
+      pass `secrets.ALICE_ECO_TOKEN`. alice-queue has a mandatory path dep on the
+      private alice-blockchain ([[feedback_ci_workspace_transitive_path_dep]]), so the
+      queue bridge cannot resolve without it; a missing secret fails loudly.
+    required: true
+
 runs:
   using: composite
   steps:
@@ -31,3 +40,19 @@ runs:
           git clone --depth 1 "https://github.com/ext-sakamoro/${repo}.git" "${parent}/${repo}"
           echo "${repo} $(grep -m1 '^version' "${parent}/${repo}/Cargo.toml") @ $(git -C "${parent}/${repo}" rev-parse --short HEAD)"
         done
+    - name: Clone ALICE-Blockchain (private, transitive via alice-queue)
+      shell: bash
+      env:
+        ECO_TOKEN: ${{ inputs.eco-token }}
+      run: |
+        set -euo pipefail
+        if [ -z "${ECO_TOKEN}" ]; then
+          echo "::error::ALICE_ECO_TOKEN secret is empty — register it on this repo (Contents: Read on ALICE-Blockchain)"
+          exit 1
+        fi
+        parent="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
+        rm -rf "${parent}/ALICE-Blockchain"
+        auth="$(printf 'x-access-token:%s' "${ECO_TOKEN}" | base64 | tr -d '\n')"
+        git -c http.extraheader="AUTHORIZATION: basic ${auth}" clone --depth 1 \
+          "https://github.com/ext-sakamoro/ALICE-Blockchain.git" "${parent}/ALICE-Blockchain"
+        echo "ALICE-Blockchain $(grep -m1 '^version' "${parent}/ALICE-Blockchain/Cargo.toml") @ $(git -C "${parent}/ALICE-Blockchain" rev-parse --short HEAD)"
