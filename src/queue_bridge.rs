@@ -33,6 +33,7 @@ pub struct QueuedGateway<const N: usize> {
 
 impl<const N: usize> QueuedGateway<N> {
     /// Create a new queued gateway.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             queue: AliceQueue::new(),
@@ -44,8 +45,8 @@ impl<const N: usize> QueuedGateway<N> {
 
     /// Enqueue an API request for async processing.
     ///
-    /// Converts the request into a queue message using client_hash as sender
-    /// and request_id as sequence number.
+    /// Converts the request into a queue message using `client_hash` as sender
+    /// and `request_id` as sequence number.
     ///
     /// # Errors
     ///
@@ -73,9 +74,9 @@ impl<const N: usize> QueuedGateway<N> {
     pub fn process_next(&mut self) -> Option<(Vec<u8>, GapResult)> {
         let (msg, result) = self.queue.dequeue().ok().flatten()?;
         match result {
-            GapResult::Accept => self.processed += 1,
+            // gap detected = still processed (the gap is reported to the caller via `result`)
+            GapResult::Accept | GapResult::Gap { .. } => self.processed += 1,
             GapResult::Duplicate => self.duplicates += 1,
-            GapResult::Gap { .. } => self.processed += 1,
         }
         Some((msg.payload, result))
     }

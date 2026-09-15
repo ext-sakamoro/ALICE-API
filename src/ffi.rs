@@ -40,7 +40,7 @@ pub struct FfiGatewayDecision {
     /// 4=MethodNotAllowed, 5=PayloadTooLarge, 6=Unauthorized,
     /// 7=DecryptFailed, 8=InternalError
     pub kind: u8,
-    /// backend_id (Forward) or retry_after_ns (RateLimited)
+    /// `backend_id` (Forward) or `retry_after_ns` (`RateLimited`)
     pub value: u64,
 }
 
@@ -103,7 +103,7 @@ pub unsafe extern "C" fn alice_api_gcra_destroy(cell: *mut GcraCell) {
 
 /// Check rate limit. Returns 1 if allowed, 0 if denied.
 ///
-/// `out_ns`: on Allow → reset_after_ns, on Deny → retry_after_ns.
+/// `out_ns`: on Allow → `reset_after_ns`, on Deny → `retry_after_ns`.
 ///
 /// # Safety
 ///
@@ -171,7 +171,7 @@ pub unsafe extern "C" fn alice_api_gcra_tat(cell: *const GcraCell) -> u64 {
 // 6. alice_api_gcra_merge
 // ============================================
 
-/// CRDT merge: cell.TAT = max(cell.TAT, other_tat).
+/// CRDT merge: cell.TAT = max(cell.TAT, `other_tat`).
 ///
 /// # Safety
 ///
@@ -203,7 +203,7 @@ pub unsafe extern "C" fn alice_api_gcra_reset(cell: *const GcraCell) {
 // 8. alice_api_gateway_create
 // ============================================
 
-/// Create a TestGateway with default config.
+/// Create a `TestGateway` with default config.
 #[no_mangle]
 pub extern "C" fn alice_api_gateway_create() -> *mut TestGateway {
     Box::into_raw(Box::new(TestGateway::new(GatewayConfig::default())))
@@ -229,7 +229,7 @@ pub unsafe extern "C" fn alice_api_gateway_destroy(gw: *mut TestGateway) {
 // 10. alice_api_gateway_add_backend
 // ============================================
 
-/// Add a backend to the gateway. Returns backend_id or 0 on failure.
+/// Add a backend to the gateway. Returns `backend_id` or 0 on failure.
 ///
 /// # Safety
 ///
@@ -303,13 +303,13 @@ pub unsafe extern "C" fn alice_api_gateway_process(
     let path_slice = std::slice::from_raw_parts(path, (path_len as usize).min(256));
 
     let http_method = match method {
-        0 => HttpMethod::Get,
         1 => HttpMethod::Post,
         2 => HttpMethod::Put,
         3 => HttpMethod::Delete,
         4 => HttpMethod::Patch,
         5 => HttpMethod::Head,
         6 => HttpMethod::Options,
+        // 0 = GET、未知の method code も GET に fold (FFI 側の default)
         _ => HttpMethod::Get,
     };
 
@@ -518,11 +518,11 @@ mod tests {
             let mut ns: u64 = 0;
 
             // Burst of 2 allowed
-            assert_eq!(alice_api_gcra_check(cell, 0, &mut ns), 1);
-            assert_eq!(alice_api_gcra_check(cell, 0, &mut ns), 1);
+            assert_eq!(alice_api_gcra_check(cell, 0, &raw mut ns), 1);
+            assert_eq!(alice_api_gcra_check(cell, 0, &raw mut ns), 1);
 
             // 3rd denied
-            assert_eq!(alice_api_gcra_check(cell, 0, &mut ns), 0);
+            assert_eq!(alice_api_gcra_check(cell, 0, &raw mut ns), 0);
             assert!(ns > 0);
 
             alice_api_gcra_destroy(cell);
@@ -631,7 +631,7 @@ mod tests {
 
             let mut flow: u64 = 0;
             let mut size: u32 = 0;
-            let id = alice_api_sfq_dequeue(sfq, &mut flow, &mut size);
+            let id = alice_api_sfq_dequeue(sfq, &raw mut flow, &raw mut size);
             assert!(id > 0);
             assert!(size > 0);
 

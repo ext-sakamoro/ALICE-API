@@ -349,20 +349,19 @@ impl<const CAPACITY: usize> GcraRegistry<CAPACITY> {
 // Utility functions
 // ============================================================================
 
-/// Get current time in nanoseconds (monotonic clock)
+/// Get current time in nanoseconds (monotonic clock, `std` only)
+///
+/// Convenience for callers on `std`; every GCRA entry point (`check` /
+/// `would_allow` / `merge`) takes `now_ns` explicitly, so `no_std` users pass
+/// their own monotonic clock (there is no `no_std` `now_ns` — the previous
+/// `no_std` version returned a constant `0`, which silently disabled rate limiting).
 #[cfg(feature = "std")]
+#[must_use]
 pub fn now_ns() -> u64 {
     use std::time::Instant;
     static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
     let start = START.get_or_init(Instant::now);
     start.elapsed().as_nanos() as u64
-}
-
-/// Get current time in nanoseconds (no_std - requires platform-specific impl)
-#[cfg(not(feature = "std"))]
-pub fn now_ns() -> u64 {
-    // Platform-specific implementation needed
-    0
 }
 
 // ============================================================================

@@ -1,6 +1,6 @@
 //! ALICE-API × ALICE-Analytics Bridge
 //!
-//! API gateway metrics: unique clients (HLL), request latency (DDSketch),
+//! API gateway metrics: unique clients (HLL), request latency (`DDSketch`),
 //! endpoint frequency (CMS), rate-limit anomaly detection (MAD).
 
 // alice-analytics 0.1 は prelude を持たない (2026-09-15 まで存在しない path を import していた)
@@ -9,9 +9,9 @@ use alice_analytics::sketch::{CountMinSketch, DDSketch, HyperLogLog};
 
 /// API gateway metrics collector.
 pub struct ApiMetrics {
-    /// Unique client estimation (HyperLogLog++).
+    /// Unique client estimation (`HyperLogLog`++).
     pub unique_clients: HyperLogLog,
-    /// Request latency quantiles (DDSketch).
+    /// Request latency quantiles (`DDSketch`).
     pub latency: DDSketch,
     /// Endpoint frequency (Count-Min Sketch).
     pub endpoint_freq: CountMinSketch,
@@ -25,6 +25,7 @@ pub struct ApiMetrics {
 
 impl ApiMetrics {
     /// Create a new API metrics collector.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             unique_clients: HyperLogLog::new(),
@@ -56,21 +57,25 @@ impl ApiMetrics {
 
     /// Estimated unique client count.
     #[inline(always)]
+    #[must_use]
     pub fn unique_client_count(&self) -> f64 {
         self.unique_clients.cardinality()
     }
     /// P99 latency.
     #[inline(always)]
+    #[must_use]
     pub fn p99_latency(&self) -> f64 {
         self.latency.quantile(0.99)
     }
     /// P50 latency.
     #[inline(always)]
+    #[must_use]
     pub fn p50_latency(&self) -> f64 {
         self.latency.quantile(0.50)
     }
     /// Endpoint request frequency.
     #[inline(always)]
+    #[must_use]
     pub fn endpoint_frequency(&self, endpoint: &[u8]) -> u64 {
         self.endpoint_freq.estimate_bytes(endpoint)
     }
@@ -81,6 +86,7 @@ impl ApiMetrics {
     }
     /// Rate-limit ratio.
     #[inline(always)]
+    #[must_use]
     pub fn rate_limit_ratio(&self) -> f64 {
         if self.total == 0 {
             0.0

@@ -47,6 +47,7 @@ pub struct AuthContext {
 impl AuthContext {
     /// Create from raw byte arrays
     #[inline(always)]
+    #[must_use]
     pub fn new(id: [u8; 32], sig: [u8; 64]) -> Self {
         Self {
             id: AliceId::new(id),
@@ -58,6 +59,7 @@ impl AuthContext {
     ///
     /// The message should match what the client signed (typically method + path).
     #[inline(always)]
+    #[must_use]
     pub fn verify(&self, message: &[u8]) -> bool {
         alice_auth::ok(&self.id, message, &self.sig)
     }
@@ -75,6 +77,10 @@ pub use alice_crypto::stream::{CipherError, Key, Nonce, TAG_SIZE};
 ///
 /// Buffer must contain `[ciphertext][16-byte Poly1305 auth tag]`.
 /// Returns plaintext length on success.
+///
+/// # Errors
+///
+/// Returns `CipherError` when the auth tag does not verify (tampered or wrong key / nonce).
 #[cfg(feature = "crypto")]
 #[inline(always)]
 pub fn decrypt_body(key: &Key, nonce: &Nonce, buffer: &mut [u8]) -> Result<usize, CipherError> {
@@ -85,6 +91,10 @@ pub fn decrypt_body(key: &Key, nonce: &Nonce, buffer: &mut [u8]) -> Result<usize
 ///
 /// AAD is authenticated but not encrypted — use for binding
 /// ciphertext to request metadata (path, method, etc.).
+///
+/// # Errors
+///
+/// Returns `CipherError` when the auth tag does not verify against the ciphertext + AAD.
 #[cfg(feature = "crypto")]
 #[inline(always)]
 pub fn decrypt_body_aead(
@@ -139,6 +149,7 @@ impl<
     > SecureGateway<RATE_SLOTS, SFQ_QUEUES, SFQ_DEPTH, MAX_ROUTES, MAX_BACKENDS>
 {
     /// Create a new secure gateway
+    #[must_use]
     pub fn new(config: GatewayConfig) -> Self {
         Self {
             inner: Gateway::new(config),
@@ -212,12 +223,11 @@ impl<
         }
 
         // 3. Decrypt body
-        match decrypt_body(key, nonce, body) {
-            Ok(plaintext_len) => (decision, Some(plaintext_len)),
-            Err(_) => {
-                self.secure_stats.decrypt_failures += 1;
-                (GatewayDecision::DecryptFailed, None)
-            }
+        if let Ok(plaintext_len) = decrypt_body(key, nonce, body) {
+            (decision, Some(plaintext_len))
+        } else {
+            self.secure_stats.decrypt_failures += 1;
+            (GatewayDecision::DecryptFailed, None)
         }
     }
 

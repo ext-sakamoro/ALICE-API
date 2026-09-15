@@ -5,6 +5,8 @@ All notable changes to ALICE-API will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **`no_std` の `gcra::now_ns()` が常に `0` を返す stub だった** — 内部の呼び出しは無く (全 API が `now_ns` を引数で受ける)、silent に rate limit を無効化する公開 stub だったので削除 (`no_std` は caller が monotonic clock を渡す、doc 明記)
+- clippy pedantic 9 件を 0 化し CI を `-W pedantic -D warnings` gate に (`# Errors` doc 2 / 同一 arm 統合 2 / `--fix` 5)
 - **`analytics` / `queue` bridge が現 sibling で compile 不能だった** — `alice_analytics::prelude` (存在しない) → `sketch::` / `anomaly::` path、`AliceQueue::dequeue` の `Result<Option<..>>` 追従 CI が stub でしか回っておらず未検出
 - **`ffi` の test が compile 不能だった** (`ptr` 未 import 16 error)
 - `QueueGateway::enqueue_request` の `Result<u64, ()>` を `QueueBridgeError::QueueFull` に (clippy `result_unit_err`)
