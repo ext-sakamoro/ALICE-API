@@ -387,7 +387,7 @@ mod tests {
     #[cfg(all(feature = "auth", feature = "crypto"))]
     #[test]
     fn test_secure_gateway_forward() {
-        use crate::routing::HttpMethod;
+        use crate::http::HttpMethod;
 
         let mut gw = TestSecureGateway::new(GatewayConfig::default());
         gw.add_backend(Backend::new(1, b"127.0.0.1", 8080));
@@ -425,7 +425,7 @@ mod tests {
     #[cfg(all(feature = "auth", feature = "crypto"))]
     #[test]
     fn test_secure_gateway_unauthorized() {
-        use crate::routing::HttpMethod;
+        use crate::http::HttpMethod;
 
         let mut gw = TestSecureGateway::new(GatewayConfig::default());
         gw.add_backend(Backend::new(1, b"127.0.0.1", 8080));
@@ -460,7 +460,7 @@ mod tests {
     #[cfg(all(feature = "auth", feature = "crypto"))]
     #[test]
     fn test_secure_gateway_encrypted_pipeline() {
-        use crate::routing::HttpMethod;
+        use crate::http::HttpMethod;
 
         let mut gw = TestSecureGateway::new(GatewayConfig::default());
         gw.add_backend(Backend::new(1, b"127.0.0.1", 8080));
@@ -514,7 +514,7 @@ mod tests {
     #[cfg(all(feature = "auth", feature = "crypto"))]
     #[test]
     fn test_secure_gateway_decrypt_failure() {
-        use crate::routing::HttpMethod;
+        use crate::http::HttpMethod;
 
         let mut gw = TestSecureGateway::new(GatewayConfig::default());
         gw.add_backend(Backend::new(1, b"127.0.0.1", 8080));

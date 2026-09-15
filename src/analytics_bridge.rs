@@ -3,7 +3,9 @@
 //! API gateway metrics: unique clients (HLL), request latency (DDSketch),
 //! endpoint frequency (CMS), rate-limit anomaly detection (MAD).
 
-use alice_analytics::prelude::*;
+// alice-analytics 0.1 は prelude を持たない (2026-09-15 まで存在しない path を import していた)
+use alice_analytics::anomaly::MadDetector;
+use alice_analytics::sketch::{CountMinSketch, DDSketch, HyperLogLog};
 
 /// API gateway metrics collector.
 pub struct ApiMetrics {

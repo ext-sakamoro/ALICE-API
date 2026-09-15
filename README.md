@@ -456,8 +456,9 @@ cargo build --release
 # With secure stack (auth + crypto)
 cargo build --release --features secure
 
-# no_std build (for embedded)
-cargo build --release --no-default-features
+# no_std build (for embedded): HTTP parsing (`http`), GCRA, SFQ, circuit breaker, load balancer
+# `routing` (splice / sendfile zero-copy, libc) is std-only; needs 64-bit atomics (e.g. aarch64-unknown-none)
+cargo build --release --no-default-features --target aarch64-unknown-none
 
 # Run tests
 cargo test --lib

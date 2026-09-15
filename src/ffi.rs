@@ -9,7 +9,7 @@
 
 use crate::gateway::{Backend, GatewayConfig, GatewayDecision, GatewayRequest, Route, TestGateway};
 use crate::gcra::{GcraCell, GcraDecision};
-use crate::routing::HttpMethod;
+use crate::http::HttpMethod;
 use crate::sfq::{QueuedRequest, StochasticFairQueue};
 use std::ffi::c_char;
 
@@ -501,6 +501,7 @@ pub extern "C" fn alice_api_version() -> *mut c_char {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::ptr;
     use std::ffi::CStr;
 
     #[test]

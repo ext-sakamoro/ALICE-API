@@ -4,3 +4,5 @@ channel = "1.98.1"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
 
+# no_std 検証用 bare-metal target (gcra の AtomicU64 のため 64-bit、pinned toolchain 側に install)
+targets = ["aarch64-unknown-none"]

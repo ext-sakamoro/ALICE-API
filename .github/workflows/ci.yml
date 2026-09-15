@@ -1,5 +1,15 @@
 name: CI
 
+# canonical CI template: [[reference_alice_ci_canonical_template]] 手順 4.5 / 4.6
+# 2026-09-15 強化 (それまで fmt + actionlint のみで test / clippy / doc は CI 未実行):
+# - test / clippy / doc を default / `std,ffi` / 全 bridge (`std,ffi,secure,queue,analytics`、real sibling) の 3 段で
+#   `-D warnings` (bridge 2 本の sibling API drift と ffi test の compile error は CI が無くて未検出だった)
+# - no_std job: host + bare-metal `aarch64-unknown-none` (gcra の AtomicU64 のため 64-bit、rust-toolchain.toml の
+#   `targets` で pinned toolchain 側に install) routing (libc / splice / sendfile) は std 専用、HTTP parsing は
+#   `http` module に分離して no_std で使える
+# - feature-powerset: std 固定 depth 2 (sibling bridge feature は除外、real sibling job 側で検証)
+# - sibling は alice-siblings (real clone、全 public) / 解決のみで良い job は alice-stubs
+
 on:
   push:
     branches: [main]
@@ -8,8 +18,82 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+  NATIVE_FEATURES: "std,ffi"
+  BRIDGE_FEATURES: "std,ffi,secure,queue,analytics"
 
 jobs:
+  test:
+    name: Test (default / native / bridges with real siblings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Checkout ALICE-* siblings (real crates)
+        uses: ./.github/actions/alice-siblings
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test (default)
+        run: cargo test
+      - name: Test (native feature set)
+        run: cargo test --features "$NATIVE_FEATURES"
+      - name: Test (all bridges, real siblings)
+        run: cargo test --features "$BRIDGE_FEATURES"
+
+  clippy:
+    name: Clippy (all targets, -D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Checkout ALICE-* siblings (real crates)
+        uses: ./.github/actions/alice-siblings
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (default features)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (native feature set)
+        run: cargo clippy --features "$NATIVE_FEATURES" --all-targets -- -D warnings
+      - name: Clippy (all bridges, real siblings)
+        run: cargo clippy --features "$BRIDGE_FEATURES" --all-targets -- -D warnings
+      # pedantic は informational (9 件残)
+      - name: Clippy pedantic (informational)
+        run: cargo clippy --features "$NATIVE_FEATURES" --all-targets -- -W clippy::pedantic
+        env:
+          RUSTFLAGS: ""
+
+  no_std:
+    name: no_std (host + bare-metal aarch64-unknown-none)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check (no_std, host)
+        run: cargo check --lib --no-default-features
+      - name: Check (no_std, bare-metal aarch64-unknown-none)
+        run: cargo check --lib --no-default-features --target aarch64-unknown-none
+      - name: Clippy (no_std, bare-metal)
+        run: cargo clippy --lib --no-default-features --target aarch64-unknown-none -- -D warnings
+
+  feature-powerset:
+    name: Feature powerset (cargo-hack, std 固定, depth 2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+      - name: Powerset (std + {ffi} depth 2、bridge feature は real sibling job 側)
+        run: cargo hack check --lib --feature-powerset --depth 2 --exclude-features auth,crypto,secure,queue,analytics --features std
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
@@ -21,6 +105,20 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+  doc:
+    name: Doc (all bridges)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Checkout ALICE-* siblings (real crates)
+        uses: ./.github/actions/alice-siblings
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Doc
+        run: cargo doc --no-deps --features "$BRIDGE_FEATURES"
+        env:
+          RUSTDOCFLAGS: "-Dwarnings"
+
   actionlint:
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest
@@ -31,4 +129,3 @@ jobs:
         with:
           fail_level: error
           reporter: github-check
-

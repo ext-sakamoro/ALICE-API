@@ -2,6 +2,17 @@
 
 All notable changes to ALICE-API will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **`analytics` / `queue` bridge が現 sibling で compile 不能だった** — `alice_analytics::prelude` (存在しない) → `sketch::` / `anomaly::` path、`AliceQueue::dequeue` の `Result<Option<..>>` 追従 CI が stub でしか回っておらず未検出
+- **`ffi` の test が compile 不能だった** (`ptr` 未 import 16 error)
+- `QueueGateway::enqueue_request` の `Result<u64, ()>` を `QueueBridgeError::QueueFull` に (clippy `result_unit_err`)
+- **`no_std` build が bare-metal で偽だった** — `routing` (libc / splice / sendfile) を `std` 専用に gate、HTTP parsing (`HttpMethod` / `parse_request_line` / `find_content_length` / `find_header_end`) を新 module `http` に分離 (`routing::` からは re-export で互換維持)、`libc` を `std` 限定 optional に `gcra` の `AtomicU64` のため 64-bit target (`aarch64-unknown-none`) が前提 (README)
+
+### Added
+- `ci.yml`: fmt + actionlint のみ → test / clippy (default / `std,ffi` / 全 bridge = real sibling 4 crate を `alice-siblings` action で clone) / `no_std` job (host + `aarch64-unknown-none` + clippy) / `feature-powerset` (std 固定 depth 2) / doc `-D warnings`、rust-cache、`rust-toolchain.toml` に aarch64-unknown-none target
+
 ## [0.1.1] - 2026-03-04
 
 ### Added

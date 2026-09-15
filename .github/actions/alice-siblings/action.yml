@@ -1,0 +1,33 @@
+name: 'ALICE-API Sibling Checkout'
+description: |
+  Clone the real ALICE-* siblings that alice-api's optional bridge features
+  (`auth` / `crypto` / `secure` / `queue` / `analytics`) reference via
+  workspace-relative path deps, so that test / clippy / doc jobs compile and run
+  the bridges against the real crates instead of empty stubs
+  (the stubs in `alice-stubs` remain for resolution-only jobs: audit / deny /
+  machete / fuzz, where the optional features are off).
+
+  All four siblings are public, so the default GITHUB_TOKEN-less HTTPS clone
+  works. Each is cloned to `$GITHUB_WORKSPACE/../ALICE-X` (the parent of this
+  checkout) — exactly where the path deps point — so callers keep the
+  single-repo layout (no `path:` / `working-directory`).
+
+  2026-09-15: `analytics_bridge` (`alice_analytics::prelude` が消えていた) と
+  `queue_bridge` (`dequeue` が `Result<Option>` に変わっていた) の drift は、
+  stub でしか CI を回していなかったため 1 度も検出されなかった (canonical 罠 #21)
+
+  Canonical CI template: [[reference_alice_ci_canonical_template]]
+
+runs:
+  using: composite
+  steps:
+    - name: Clone ALICE-Auth / ALICE-Crypto / ALICE-Queue / ALICE-Analytics (public)
+      shell: bash
+      run: |
+        set -euo pipefail
+        parent="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
+        for repo in ALICE-Auth ALICE-Crypto ALICE-Queue ALICE-Analytics; do
+          rm -rf "${parent}/${repo}"
+          git clone --depth 1 "https://github.com/ext-sakamoro/${repo}.git" "${parent}/${repo}"
+          echo "${repo} $(grep -m1 '^version' "${parent}/${repo}/Cargo.toml") @ $(git -C "${parent}/${repo}" rev-parse --short HEAD)"
+        done

@@ -12,7 +12,7 @@ publish = false
 
 [features]
 default = ["std"]
-std = []
+std = ["dep:libc"]  # routing (splice / sendfile) は libc 依存、no_std では http parsing のみ
 ffi = ["std"]     # C/C++/C# FFI bindings
 auth = ["dep:alice-auth"]
 crypto = ["dep:alice-crypto"]
@@ -23,8 +23,8 @@ analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics API metrics
 [dependencies]
 # Logging
 log = "0.4"
-# For zero-copy syscalls (splice, sendfile)
-libc = "0.2"
+# For zero-copy syscalls (splice, sendfile) — routing module (std 専用) のみ
+libc = { version = "0.2", optional = true }
 # Optional: Ed25519 ZKP authentication
 alice-auth = { path = "../ALICE-Auth", optional = true, default-features = false, features = ["std"] }
 # Optional: XChaCha20-Poly1305 encryption

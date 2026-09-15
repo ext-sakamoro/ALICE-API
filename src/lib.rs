@@ -127,11 +127,15 @@ pub mod ffi;
 pub mod gateway;
 pub mod gcra;
 pub mod health;
+pub mod http;
 pub mod loadbalancer;
 #[cfg(any(feature = "auth", feature = "crypto"))]
 pub mod middleware;
 #[cfg(feature = "queue")]
 pub mod queue_bridge;
+/// Zero-copy forwarding (`splice` / `sendfile`、libc) — OS 依存なので `std` 専用
+/// (HTTP parsing は [`http`] に分離、no_std でも使える)
+#[cfg(feature = "std")]
 pub mod routing;
 pub mod sfq;
 pub mod transform;
@@ -143,9 +147,12 @@ pub mod prelude {
         GatewayRequest, GatewayStats, Route, TestGateway,
     };
     pub use crate::gcra::{GcraCell, GcraDecision, GcraRegistry};
+    pub use crate::http::{
+        find_content_length, find_header_end, parse_request_line, HttpMethod, RequestLine,
+    };
+    #[cfg(feature = "std")]
     pub use crate::routing::{
-        find_content_length, find_header_end, parse_request_line, BatchedForwarder, HttpMethod,
-        RequestLine, SpliceBatchResult, SpliceError, SpliceOp, ZeroCopyForwarder,
+        BatchedForwarder, SpliceBatchResult, SpliceError, SpliceOp, ZeroCopyForwarder,
     };
     pub use crate::sfq::{
         QueuedRequest, SfqShard, SfqStats, ShardedSfq, StochasticFairQueue, WeightedSfq,

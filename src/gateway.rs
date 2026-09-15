@@ -18,7 +18,7 @@
 //! ```
 
 use crate::gcra::{GcraDecision, GcraRegistry};
-use crate::routing::HttpMethod;
+use crate::http::HttpMethod;
 use crate::sfq::{QueuedRequest, SfqStats, StochasticFairQueue};
 
 // ============================================================================
