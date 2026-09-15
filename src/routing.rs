@@ -121,7 +121,11 @@ pub fn create_pipe() -> Result<(c_int, c_int), SpliceError> {
     }
 }
 
-/// Create a pipe with flags (O_NONBLOCK, O_CLOEXEC)
+/// Create a pipe with flags (`O_NONBLOCK`, `O_CLOEXEC`)
+///
+/// # Errors
+///
+/// Returns the `errno`-derived [`SpliceError`] when `pipe2(2)` fails.
 #[cfg(target_os = "linux")]
 pub fn create_pipe2(flags: c_int) -> Result<(c_int, c_int), SpliceError> {
     let mut fds: [c_int; 2] = [0; 2];
@@ -149,6 +153,10 @@ pub fn close_fd(fd: c_int) {
 /// # Returns
 /// Number of bytes transferred, or error
 ///
+/// # Errors
+///
+/// Returns the `errno`-derived [`SpliceError`] when `splice(2)` fails (`EAGAIN` → `WouldBlock`).
+///
 /// # Safety
 /// Uses raw file descriptors. Caller must ensure fds are valid.
 #[cfg(target_os = "linux")]
@@ -160,8 +168,8 @@ pub fn splice(
     len: size_t,
     flags: libc::c_uint,
 ) -> SpliceResult {
-    let off_in_ptr = off_in.map_or(ptr::null_mut(), |o| o as *mut _);
-    let off_out_ptr = off_out.map_or(ptr::null_mut(), |o| o as *mut _);
+    let off_in_ptr = off_in.map_or(ptr::null_mut(), ptr::from_mut);
+    let off_out_ptr = off_out.map_or(ptr::null_mut(), ptr::from_mut);
 
     let ret = unsafe { libc::splice(fd_in, off_in_ptr, fd_out, off_out_ptr, len, flags) };
 
@@ -225,7 +233,7 @@ pub fn sendfile(
 ) -> SpliceResult {
     #[cfg(target_os = "linux")]
     let ret = {
-        let off_ptr = offset.map_or(ptr::null_mut(), |o| o as *mut _);
+        let off_ptr = offset.map_or(ptr::null_mut(), ptr::from_mut);
         unsafe { libc::sendfile(out_fd, in_fd, off_ptr, count) }
     };
 
