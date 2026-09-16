@@ -103,3 +103,19 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
 
 [sources.allow-org]
+
+# Sibling ALICE crates carry their own license (AGPL / commercial dual). CI
+# builds some of them as MIT stubs, the local preflight sees the real crates:
+# allow each explicitly.
+
+[[licenses.exceptions]]
+name = "alice-auth"
+allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+
+[[licenses.exceptions]]
+name = "alice-crypto"
+allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+
+[[licenses.exceptions]]
+name = "alice-queue"
+allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
