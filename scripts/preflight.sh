@@ -343,10 +343,10 @@ step "security-audit.yml / deny: Run cargo deny check all"
   set -euo pipefail
   rm -f Cargo.lock
   cargo generate-lockfile
-  cargo deny --all-features list > deny-list.txt
-  n=$(grep -c . deny-list.txt || true)
-  [ "${n}" -gt 1 ] || { echo "::error::cargo deny listed ${n} lines"; exit 1; }
-  echo "cargo deny graph: ${n} lines"
+  python3 scripts/test_deny_graph_guard.py
+  cargo deny --all-features list --format json --layout crate > deny-graph.json
+  python3 scripts/deny_graph_guard.py --graph deny-graph.json --lock Cargo.lock \
+    --pins .github/alice-siblings --siblings-dir .. --crate alice-api
   cargo deny --all-features check all
 )
 
