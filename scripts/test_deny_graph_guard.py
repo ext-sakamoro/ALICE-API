@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests of scripts/deny_graph_guard.py: the guard must fail whenever cargo deny's crate graph
 could not have compared anything real (empty, missing this crate or a pinned sibling, or
-larger than the resolve it came from), and pass a graph that holds them all.
+larger than the resolve it came from, or no sibling pinned at all), and pass a graph that holds them all.
 """
 import json
 import pathlib
@@ -50,7 +50,7 @@ def main():
         ("a graph without a pinned sibling fails", [g for g in good if not g[0].startswith("alice-crypto")], lock, pins, 1),
         ("a graph larger than the resolve fails", good + [entry("ghost")], ["alice-api", "alice-auth", "alice-crypto"], pins, 1),
         ("an empty resolve fails", good, [], pins, 1),
-        ("no pins at all is still checked (this crate and a nonzero graph)", good, lock, [], 0),
+        ("no pins at all fails (no sibling compared)", good, lock, [], 1),
     ]
     for name, graph, lock_names, p, want in cases:
         rc, out = run(graph, lock_names, p)
