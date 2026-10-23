@@ -5,6 +5,7 @@ All notable changes to ALICE-API will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- CI: advisory の検査 (cargo audit / cargo deny --all-features) を空の stub でなく `.github/alice-siblings` の commit に固定した実物の sibling (Analytics / Auth / Crypto / Queue) で毎回新しく解決して行う sibling 経由で入る依存 (alice-crypto → blake3 → digest → ctutils 等) の advisory も見える 解決した package 数と sibling の包含、cargo audit の走査数が 0 なら失敗 週次は火曜 03:17 UTC (repo ごとに時刻をずらす)、変更の判定は changes job が main との merge base から取る (ci/ の初回も見る) build / test の sibling も固定の commit になり、不要になった非公開 sibling の clone と token を外した
 - **License: `AGPL-3.0` → `AGPL-3.0 OR LicenseRef-Commercial` (dual-licensed、2026-09-27)** AGPL 側の条件は変更なし (既存 AGPL 利用者への影響ゼロ)、商用という選択肢が追加されただけ SPDX が AGPL 単独だと cargo-deny / FOSSA / SBOM に「商用オプションなし」と見えるため宣言を dual に 変更点: SPDX / `LICENSE` → `LICENSE-AGPL` / `LICENSE-COMMERCIAL.md` (商用トリガー 6 条件 = クローズド製品・商用 SaaS・エッジ / ファームウェア配布・plugin 再配布・プラットフォーム NDA・保証、社内利用は AGPL 側で無償と明記) / README の選択肢表 商用窓口は法人 `contact@extoria.co.jp`
 
 ### Fixed

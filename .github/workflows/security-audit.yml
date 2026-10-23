@@ -10,31 +10,17 @@ name: Security & Hygiene
 # - 仮実装 (panic!(STUB) / dbg!) の CI gate (todo!/unimplemented! は informational)
 
 on:
+  # every event is looked at; the `changes` job decides which jobs run (a path filter
+  # sees nothing on the first event of a new ci/ branch, so the diff is taken against
+  # the merge base with main there)
   push:
-    branches: [main]
-    paths:
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'src/**'
-      - 'deny.toml'
-      - '.github/workflows/security-audit.yml'
-      - '.github/actions/**'
-      - 'bindings/*/Cargo.toml'
-      - 'bindings/*/*/Cargo.toml'
+    branches: [main, 'ci/**']
   pull_request:
     branches: [main]
-    paths:
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'src/**'
-      - 'deny.toml'
-      - '.github/workflows/security-audit.yml'
-      - '.github/actions/**'
-      - 'bindings/*/Cargo.toml'
-      - 'bindings/*/*/Cargo.toml'
   schedule:
-    # 毎週月曜 09:00 UTC = 18:00 JST
-    - cron: '0 9 * * 1'
+    # weekly on a fresh resolve (no Cargo.lock is committed), so a new advisory goes red
+    # without a change here; each ALICE repo has its own slot
+    - cron: '17 3 * * 2'
   workflow_dispatch:
 
 concurrency:
@@ -47,25 +33,75 @@ env:
   CARGO_HTTP_MULTIPLEXING: "false"
 
 jobs:
+  changes:
+    name: changed paths
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      deps: ${{ steps.diff.outputs.deps }}
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" = refs/heads/main ] && [ -n "${BEFORE}" ] && [ "${BEFORE}" != 0000000000000000000000000000000000000000 ]; then
+            base="${BEFORE}"
+          else
+            git fetch -q origin main
+            base="$(git merge-base origin/main HEAD)"
+          fi
+          files="$(git diff --name-only "${base}" HEAD)"
+          echo "base ${base}"; printf '%s\n' "${files}"
+          deps=false; code=false
+          if printf '%s\n' "${files}" | grep -Eq '^(Cargo\.toml|Cargo\.lock|deny\.toml|\.github/workflows/security-audit\.yml|\.github/alice-siblings|\.github/actions/)'; then deps=true; fi
+          if [ "${deps}" = true ] || printf '%s\n' "${files}" | grep -Eq '^(src/|bindings/|crates/)'; then code=true; fi
+          echo "deps=${deps}" >> "${GITHUB_OUTPUT}"
+          echo "code=${code}" >> "${GITHUB_OUTPUT}"
+
   audit:
     name: cargo audit (RustSec CVE scan)
+    needs: changes
+    if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.deps == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
 
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
+      # the real siblings at the pinned commits, never stubs: a dependency that enters
+      # through a sibling is resolved and scanned
+      - name: Check out the pinned ALICE-* siblings
+        uses: ./.github/actions/alice-siblings
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
+
+      # fresh resolve (no Cargo.lock is committed); the scan must cover a nonzero number of
+      # crates, else it compared nothing
+      - name: Resolve
+        run: |
+          set -euo pipefail
+          rm -f Cargo.lock
+          cargo generate-lockfile
+          n=$(grep -c '^name = ' Cargo.lock)
+          echo "resolved ${n} packages"
+          while read -r repo _pin; do
+            case "${repo}" in ''|'#'*) continue ;; esac
+            name=$(grep -m1 '^name' "../${repo}/Cargo.toml" | sed 's/.*"\(.*\)".*/\1/')
+            grep -q "^name = \"${name}\"" Cargo.lock || { echo "::error::${name} (${repo}) is not in the resolve"; exit 1; }
+          done < .github/alice-siblings
+          [ "${n}" -gt 1 ] || { echo "::error::resolved ${n} packages"; exit 1; }
 
       # advisory-db は audit 実行時に自動取得
       # yanked crate は deny、unmaintained warning は個別 ignore で管理
       # deny.toml と同期
       - name: Run cargo audit
         run: |
+          set -o pipefail
           cargo audit \
             --deny yanked \
             --ignore RUSTSEC-2024-0436 \
@@ -73,18 +109,24 @@ jobs:
             --ignore RUSTSEC-2025-0141 \
             --ignore RUSTSEC-2026-0176 \
             --ignore RUSTSEC-2026-0177 \
-            --ignore RUSTSEC-2026-0192
+            --ignore RUSTSEC-2026-0192 2>&1 | tee audit.log
+          n=$(grep -oE 'vulnerabilities \([0-9]+ crate dependencies\)' audit.log | grep -oE '[0-9]+' | head -1)
+          [ "${n:-0}" -gt 0 ] || { echo "::error::cargo audit scanned ${n:-0} crates"; exit 1; }
+          echo "cargo audit scanned ${n} crates"
 
   deny:
     name: cargo-deny (license + advisories + bans + sources)
+    needs: changes
+    if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.deps == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
 
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
+      # the real siblings at the pinned commits, never stubs: a dependency that enters
+      # through a sibling is resolved and scanned
+      - name: Check out the pinned ALICE-* siblings
+        uses: ./.github/actions/alice-siblings
 
       # EmbarkStudios/cargo-deny-action@v2 は Docker container 内で稼働し、
       # /github/workspace のみ mount するため sibling path dep が見えず fail する
@@ -92,11 +134,23 @@ jobs:
       - name: Install cargo-deny
         run: cargo install --locked cargo-deny
 
+      # fresh resolve, then the check; the crate graph must be nonempty, else the check
+      # compared nothing
       - name: Run cargo deny check all
-        run: cargo deny --all-features check all
+        run: |
+          set -euo pipefail
+          rm -f Cargo.lock
+          cargo generate-lockfile
+          cargo deny --all-features list > deny-list.txt
+          n=$(grep -c . deny-list.txt || true)
+          [ "${n}" -gt 1 ] || { echo "::error::cargo deny listed ${n} lines"; exit 1; }
+          echo "cargo deny graph: ${n} lines"
+          cargo deny --all-features check all
 
   unused-deps:
     name: cargo-machete (unused dependencies)
+    needs: changes
+    if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -110,6 +164,8 @@ jobs:
 
   stub-guard:
     name: Stub / mock / dbg guard (grep)
+    needs: changes
+    if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -153,6 +209,8 @@ jobs:
 
   coverage:
     name: Coverage (cargo-llvm-cov、informational)
+    needs: changes
+    if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -181,6 +239,8 @@ jobs:
 
   semver-checks:
     name: cargo-semver-checks (API compat、informational)
+    needs: changes
+    if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     # ALICE-API は publish = false (private crate) のため crates.io baseline なし
     # git baseline (main~1) で比較、informational only
