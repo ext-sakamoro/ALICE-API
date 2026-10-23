@@ -36,8 +36,6 @@ jobs:
       - uses: actions/checkout@v5
       - name: Checkout ALICE-* siblings (real crates)
         uses: ./.github/actions/alice-siblings
-        with:
-          eco-token: ${{ secrets.ALICE_ECO_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Test (default)
@@ -54,8 +52,6 @@ jobs:
       - uses: actions/checkout@v5
       - name: Checkout ALICE-* siblings (real crates)
         uses: ./.github/actions/alice-siblings
-        with:
-          eco-token: ${{ secrets.ALICE_ECO_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -118,8 +114,6 @@ jobs:
       - uses: actions/checkout@v5
       - name: Checkout ALICE-* siblings (real crates)
         uses: ./.github/actions/alice-siblings
-        with:
-          eco-token: ${{ secrets.ALICE_ECO_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Doc

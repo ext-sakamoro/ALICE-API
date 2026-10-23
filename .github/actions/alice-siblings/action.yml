@@ -1,58 +1,46 @@
 name: 'ALICE-API Sibling Checkout'
 description: |
-  Clone the real ALICE-* siblings that alice-api's optional bridge features
-  (`auth` / `crypto` / `secure` / `queue` / `analytics`) reference via
-  workspace-relative path deps, so that test / clippy / doc jobs compile and run
-  the bridges against the real crates instead of empty stubs
-  (the stubs in `alice-stubs` remain for resolution-only jobs: audit / deny /
-  machete / fuzz, where the optional features are off).
+  Check out the real ALICE-* siblings that alice-api's optional bridge features
+  (`auth` / `crypto` / `secure` / `queue` / `analytics`) reference through
+  workspace-relative path deps, each at the commit pinned in `.github/alice-siblings`,
+  next to this checkout (`$GITHUB_WORKSPACE/../ALICE-X`, where the path deps point).
+  Used by the build and test jobs and by the advisory scan, so a dependency that
+  enters through a sibling (and the advisories against it) is resolved for real,
+  never through an empty stub.
 
-  All four siblings are public, so the default GITHUB_TOKEN-less HTTPS clone
-  works. Each is cloned to `$GITHUB_WORKSPACE/../ALICE-X` (the parent of this
-  checkout) — exactly where the path deps point — so callers keep the
-  single-repo layout (no `path:` / `working-directory`).
-
-  2026-09-15: `analytics_bridge` (`alice_analytics::prelude` が消えていた) と
-  `queue_bridge` (`dequeue` が `Result<Option>` に変わっていた) の drift は、
-  stub でしか CI を回していなかったため 1 度も検出されなかった (canonical 罠 #21)
-
-  Canonical CI template: [[reference_alice_ci_canonical_template]]
-
-inputs:
-  eco-token:
-    description: |
-      Fine-grained PAT (Contents: Read-only) covering ext-sakamoro/ALICE-Blockchain —
-      pass `secrets.ALICE_ECO_TOKEN`. alice-queue has a mandatory path dep on the
-      private alice-blockchain ([[feedback_ci_workspace_transitive_path_dep]]), so the
-      queue bridge cannot resolve without it; a missing secret fails loudly.
-    required: true
+  The pin file is read line by line (`<Repo> <40-hex SHA>`, `#` comments). A malformed
+  line, an empty file, or a checkout that does not land on the pinned commit fails.
 
 runs:
   using: composite
   steps:
-    - name: Clone ALICE-Auth / ALICE-Crypto / ALICE-Queue / ALICE-Analytics (public)
+    - name: Check out the pinned siblings
       shell: bash
       run: |
         set -euo pipefail
         parent="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
-        for repo in ALICE-Auth ALICE-Crypto ALICE-Queue ALICE-Analytics; do
-          rm -rf "${parent}/${repo}"
-          git clone --depth 1 "https://github.com/ext-sakamoro/${repo}.git" "${parent}/${repo}"
-          echo "${repo} $(grep -m1 '^version' "${parent}/${repo}/Cargo.toml") @ $(git -C "${parent}/${repo}" rev-parse --short HEAD)"
-        done
-    - name: Clone ALICE-Blockchain (private, transitive via alice-queue)
-      shell: bash
-      env:
-        ECO_TOKEN: ${{ inputs.eco-token }}
-      run: |
-        set -euo pipefail
-        if [ -z "${ECO_TOKEN}" ]; then
-          echo "::error::ALICE_ECO_TOKEN secret is empty — register it on this repo (Contents: Read on ALICE-Blockchain)"
+        pins="${GITHUB_WORKSPACE}/.github/alice-siblings"
+        count=0
+        while read -r repo sha rest; do
+          case "${repo}" in ''|'#'*) continue ;; esac
+          if [ -n "${rest}" ] || ! printf '%s' "${sha}" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::malformed pin line: ${repo} ${sha} ${rest}"
+            exit 1
+          fi
+          rm -rf "${parent:?}/${repo}"
+          git init -q "${parent}/${repo}"
+          git -C "${parent}/${repo}" fetch -q --depth 1 "https://github.com/ext-sakamoro/${repo}.git" "${sha}"
+          git -C "${parent}/${repo}" checkout -q --detach FETCH_HEAD
+          got="$(git -C "${parent}/${repo}" rev-parse HEAD)"
+          if [ "${got}" != "${sha}" ]; then
+            echo "::error::${repo} is at ${got}, the pin says ${sha}"
+            exit 1
+          fi
+          echo "${repo} $(grep -m1 '^version' "${parent}/${repo}/Cargo.toml") @ ${sha}"
+          count=$((count + 1))
+        done < "${pins}"
+        if [ "${count}" -eq 0 ]; then
+          echo "::error::no sibling pinned in .github/alice-siblings"
           exit 1
         fi
-        parent="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
-        rm -rf "${parent}/ALICE-Blockchain"
-        auth="$(printf 'x-access-token:%s' "${ECO_TOKEN}" | base64 | tr -d '\n')"
-        git -c http.extraheader="AUTHORIZATION: basic ${auth}" clone --depth 1 \
-          "https://github.com/ext-sakamoro/ALICE-Blockchain.git" "${parent}/ALICE-Blockchain"
-        echo "ALICE-Blockchain $(grep -m1 '^version' "${parent}/ALICE-Blockchain/Cargo.toml") @ $(git -C "${parent}/ALICE-Blockchain" rev-parse --short HEAD)"
+        echo "checked out ${count} pinned siblings"

@@ -1,0 +1,6 @@
+# the commit of each path sibling (../<Repo>) the bridges, the build and the advisory scan resolve against (full SHA); change only this value to move it
+ALICE-Analytics f2a056aa73abb4a63d32e5f065d06e6d6d1f98a2
+# ALICE-Auth is held at an older commit: its newer API does not build with this crate yet (port pending)
+ALICE-Auth c5e7ee17af971fcf2c5918054b1890b44eca0cd9
+ALICE-Crypto 31d525a82d4001956ca033b819ca30af3a0b71b8
+ALICE-Queue 7d5c3c01ffc484eb009bd8cf7020d5bdd65d036a
