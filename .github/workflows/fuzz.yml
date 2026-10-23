@@ -14,7 +14,8 @@ name: Fuzz
 
 on:
   push:
-    branches: [main]
+    # ci/** runs the whole workflow on a branch before it is landed on main
+    branches: [main, "ci/**"]
     paths:
       - 'src/**'
       - 'fuzz/**'
@@ -39,8 +40,8 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
