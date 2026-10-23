@@ -1,46 +1,56 @@
-name: 'ALICE-API Sibling Checkout'
-description: |
-  Check out the real ALICE-* siblings that alice-api's optional bridge features
-  (`auth` / `crypto` / `secure` / `queue` / `analytics`) reference through
-  workspace-relative path deps, each at the commit pinned in `.github/alice-siblings`,
-  next to this checkout (`$GITHUB_WORKSPACE/../ALICE-X`, where the path deps point).
-  Used by the build and test jobs and by the advisory scan, so a dependency that
-  enters through a sibling (and the advisories against it) is resolved for real,
-  never through an empty stub.
-
-  The pin file is read line by line (`<Repo> <40-hex SHA>`, `#` comments). A malformed
-  line, an empty file, or a checkout that does not land on the pinned commit fails.
-
+name: ALICE sibling checkouts
+description: >-
+  Clones each repository listed in .github/alice-siblings ("<Repo> <40-hex commit SHA>" per
+  line, "#" comments) next to this one ("<repo-dir>/../<Repo>" under $GITHUB_WORKSPACE, the path
+  the manifests name) and checks out that commit. Fails when a line is malformed, nothing is
+  listed, or a checkout ends at another commit.
+inputs:
+  repo-dir:
+    description: >-
+      This repository's directory relative to $GITHUB_WORKSPACE (`.` when it is checked out at
+      the workspace root, `ALICE-LOL` when the workflow checks it out with `path: ALICE-LOL`)
+    required: false
+    default: "."
 runs:
   using: composite
   steps:
-    - name: Check out the pinned siblings
+    - name: ALICE siblings at .github/alice-siblings
       shell: bash
+      env:
+        REPO_DIR: ${{ inputs.repo-dir }}
       run: |
         set -euo pipefail
-        parent="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
-        pins="${GITHUB_WORKSPACE}/.github/alice-siblings"
-        count=0
-        while read -r repo sha rest; do
-          case "${repo}" in ''|'#'*) continue ;; esac
-          if [ -n "${rest}" ] || ! printf '%s' "${sha}" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "::error::malformed pin line: ${repo} ${sha} ${rest}"
+        base="$GITHUB_WORKSPACE/$REPO_DIR"
+        list="$base/.github/alice-siblings"
+        # the clone URL prefix; ALICE_SIBLINGS_GIT_BASE exists for the action's own test (local
+        # repositories). Redirecting it does not weaken the pin: every checkout must end at the
+        # listed 40-hex commit, checked below, or the step fails
+        git_base="${ALICE_SIBLINGS_GIT_BASE:-https://github.com/ext-sakamoro}"
+        n=0
+        while IFS= read -r line || [ -n "$line" ]; do
+          line="${line%%#*}"
+          line="$(printf '%s' "$line" | tr -d '\r' | xargs)"
+          [ -z "$line" ] && continue
+          read -r repo ref extra <<< "$line"
+          if ! [[ "$repo" =~ ^ALICE-[A-Za-z0-9-]+$ && "$ref" =~ ^[0-9a-f]{40}$ && -z "${extra:-}" ]]; then
+            echo "::error::.github/alice-siblings: not '<ALICE-Repo> <40-hex SHA>': '$line'"
             exit 1
           fi
-          rm -rf "${parent:?}/${repo}"
-          git init -q "${parent}/${repo}"
-          git -C "${parent}/${repo}" fetch -q --depth 1 "https://github.com/ext-sakamoro/${repo}.git" "${sha}"
-          git -C "${parent}/${repo}" checkout -q --detach FETCH_HEAD
-          got="$(git -C "${parent}/${repo}" rev-parse HEAD)"
-          if [ "${got}" != "${sha}" ]; then
-            echo "::error::${repo} is at ${got}, the pin says ${sha}"
+          dest="$base/../$repo"
+          if [ ! -d "$dest/.git" ]; then
+            git clone -q --filter=blob:none "$git_base/$repo" "$dest"
+          fi
+          git -C "$dest" cat-file -e "$ref^{commit}" 2>/dev/null || git -C "$dest" fetch -q origin "$ref"
+          git -C "$dest" checkout -q --detach "$ref"
+          got=$(git -C "$dest" rev-parse HEAD)
+          if [ "$got" != "$ref" ]; then
+            echo "::error::$repo sibling is at $got, .github/alice-siblings says $ref"
             exit 1
           fi
-          echo "${repo} $(grep -m1 '^version' "${parent}/${repo}/Cargo.toml") @ ${sha}"
-          count=$((count + 1))
-        done < "${pins}"
-        if [ "${count}" -eq 0 ]; then
-          echo "::error::no sibling pinned in .github/alice-siblings"
+          echo "$repo sibling at $got"
+          n=$((n + 1))
+        done < "$list"
+        if [ "$n" -eq 0 ]; then
+          echo "::error::.github/alice-siblings lists no repository (cloned nothing)"
           exit 1
         fi
-        echo "checked out ${count} pinned siblings"
