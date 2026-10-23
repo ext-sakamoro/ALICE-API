@@ -6,7 +6,7 @@ crate list cargo deny resolved (`cargo deny --all-features list --format json --
 with the fresh resolve (Cargo.lock) and the pinned siblings:
 
   - the graph names at least one crate, and this crate itself;
-  - every sibling pinned in `.github/alice-siblings` (its package name read from
+  - at least one sibling is pinned in `.github/alice-siblings`, and every one (its package name read from
     <siblings-dir>/<Repo>/Cargo.toml) is in the graph, so a dependency that enters through a
     sibling is covered;
   - the graph has no more crates than the resolve has packages (it came from that resolve; the
@@ -60,6 +60,10 @@ def main(argv):
         pinned += 1
         if m.group(1) not in names:
             errors.append(f"pinned sibling {m.group(1)} ({parts[0]}) is not in cargo deny's graph")
+
+    # no pin at all means no sibling was compared; the guard does not rely on another step for that
+    if pinned == 0:
+        errors.append(f"{a.pins} pins no sibling (compared none)")
 
     print(f"deny_graph_guard: graph {len(graph)} crates, resolve {resolved} packages, {pinned} pinned siblings present")
     for e in errors:
