@@ -6,7 +6,7 @@
 # Run `--quick` before every push.
 #
 # usage: scripts/preflight.sh [--quick]   (--quick skips the test / bench suites)
-# generator rev 7b9601a9abf759ed04c7dc9bf2ebd404323370c7
+# generator rev 53b5498bfca8e6d099032eaee5ccb99ec580b7b3
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # --- heavy slot (begin) ---
@@ -251,6 +251,7 @@ has_toolchain() { grep -q "^$1" <<<"$(rustup toolchain list)"; }
 
 # Steps CI runs that this file cannot reproduce locally (they can only fail remotely):
 #   - ci.yml:test: uses ./.github/actions/alice-siblings (an action this file cannot run)
+#   - ci.yml:test:Test (all bridges, real siblings; at least 211 passed) (needs network / runner-only)
 #   - ci.yml:clippy: uses ./.github/actions/alice-siblings (an action this file cannot run)
 #   - ci.yml:no_std: uses ./.github/actions/alice-stubs (an action this file cannot run)
 #   - ci.yml:feature-powerset: uses ./.github/actions/alice-stubs (an action this file cannot run)
@@ -439,9 +440,6 @@ step "ci.yml / test: Test (default)"
 
 step "ci.yml / test: Test (native feature set)"
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,ffi" BRIDGE_FEATURES="std,ffi,secure,queue,analytics"; cargo test --features "$NATIVE_FEATURES" )
-
-step "ci.yml / test: Test (all bridges, real siblings)"
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,ffi" BRIDGE_FEATURES="std,ffi,secure,queue,analytics"; cargo test --features "$BRIDGE_FEATURES" )
 
 step "security-audit.yml / audit: Run cargo audit"
 (

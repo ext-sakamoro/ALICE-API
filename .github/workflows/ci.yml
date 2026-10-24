@@ -39,8 +39,12 @@ jobs:
         run: cargo test
       - name: Test (native feature set)
         run: cargo test --features "$NATIVE_FEATURES"
-      - name: Test (all bridges, real siblings)
-        run: cargo test --features "$BRIDGE_FEATURES"
+      - name: Test (all bridges, real siblings; at least 211 passed)
+        run: |
+          set -o pipefail
+          log=$(mktemp)
+          cargo test --features "$BRIDGE_FEATURES" 2>&1 | tee "$log"
+          python3 -c 'import re, sys; t = re.sub(r"\x1b\[[0-9;]*m", "", open(sys.argv[1]).read()); p = sum(int(x) for x in re.findall(r"test result: \w+\. (\d+) passed", t)); f = sum(int(x) for x in re.findall(r"test result: \w+\. \d+ passed; (\d+) failed", t)); print(f"tests: {p} passed, {f} failed (at least 211)"); sys.exit(0 if p >= 211 and f == 0 else 1)' "$log"
 
   clippy:
     name: Clippy (all targets, pedantic, -D warnings)

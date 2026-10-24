@@ -295,41 +295,55 @@ pub type TestSecureGateway = SecureGateway<64, 8, 16, 8, 4>;
 mod tests {
     use super::*;
 
+    // alice-auth's Identity::gen and Identity::sign return Results; the tests carry them with `?` (no unwrap)
+    #[cfg(feature = "auth")]
+    fn identity() -> Result<alice_auth::Identity, String> {
+        alice_auth::Identity::gen().map_err(|e| e.to_string())
+    }
+
+    #[cfg(feature = "auth")]
+    fn sign(id: &alice_auth::Identity, message: &[u8]) -> Result<AliceSig, String> {
+        id.sign(message).map_err(|e| e.to_string())
+    }
+
     #[cfg(feature = "auth")]
     #[test]
-    fn test_auth_verify() {
-        let identity = alice_auth::Identity::gen().unwrap();
+    fn test_auth_verify() -> Result<(), String> {
+        let identity = identity()?;
         let message = b"GET /api/users";
         let ctx = AuthContext {
             id: identity.id(),
-            sig: identity.sign(message),
+            sig: sign(&identity, message)?,
         };
         assert!(ctx.verify(message));
         assert!(!ctx.verify(b"tampered"));
+        Ok(())
     }
 
     #[cfg(feature = "auth")]
     #[test]
-    fn test_auth_context_from_bytes() {
-        let identity = alice_auth::Identity::gen().unwrap();
+    fn test_auth_context_from_bytes() -> Result<(), String> {
+        let identity = identity()?;
         let message = b"POST /api/data";
-        let sig = identity.sign(message);
+        let sig = sign(&identity, message)?;
         let ctx = AuthContext::new(identity.id().into_bytes(), sig.into_bytes());
         assert!(ctx.verify(message));
+        Ok(())
     }
 
     #[cfg(feature = "auth")]
     #[test]
-    fn test_auth_wrong_signer() {
-        let alice = alice_auth::Identity::gen().unwrap();
-        let bob = alice_auth::Identity::gen().unwrap();
+    fn test_auth_wrong_signer() -> Result<(), String> {
+        let alice = identity()?;
+        let bob = identity()?;
         let message = b"GET /secret";
         // Alice signs, but we claim it's from Bob
         let ctx = AuthContext {
             id: bob.id(),
-            sig: alice.sign(message),
+            sig: sign(&alice, message)?,
         };
         assert!(!ctx.verify(message));
+        Ok(())
     }
 
     #[cfg(feature = "crypto")]
@@ -396,7 +410,7 @@ mod tests {
 
     #[cfg(all(feature = "auth", feature = "crypto"))]
     #[test]
-    fn test_secure_gateway_forward() {
+    fn test_secure_gateway_forward() -> Result<(), String> {
         use crate::http::HttpMethod;
 
         let mut gw = TestSecureGateway::new(GatewayConfig::default());
@@ -405,11 +419,11 @@ mod tests {
         route.add_backend(1);
         gw.add_route(route);
 
-        let identity = alice_auth::Identity::gen().unwrap();
+        let identity = identity()?;
         let sign_msg = b"GET /api/users";
         let auth = AuthContext {
             id: identity.id(),
-            sig: identity.sign(sign_msg),
+            sig: sign(&identity, sign_msg)?,
         };
 
         let mut path = [0u8; 256];
@@ -430,11 +444,12 @@ mod tests {
             decision,
             GatewayDecision::Forward { backend_id: 1 }
         ));
+        Ok(())
     }
 
     #[cfg(all(feature = "auth", feature = "crypto"))]
     #[test]
-    fn test_secure_gateway_unauthorized() {
+    fn test_secure_gateway_rejects_forged_tokens() -> Result<(), String> {
         use crate::http::HttpMethod;
 
         let mut gw = TestSecureGateway::new(GatewayConfig::default());
@@ -443,10 +458,76 @@ mod tests {
         route.add_backend(1);
         gw.add_route(route);
 
-        let identity = alice_auth::Identity::gen().unwrap();
+        let mut path = [0u8; 256];
+        path[0] = b'/';
+        let request = GatewayRequest {
+            client_hash: 12345,
+            request_id: 1,
+            method: HttpMethod::Get,
+            path,
+            path_len: 1,
+            content_length: 0,
+            header_size: 100,
+            timestamp_ns: 0,
+        };
+        let msg = b"GET /";
+        let holder = identity()?;
+        let other = identity()?;
+        let genuine = sign(&holder, msg)?;
+
+        // the genuine token is forwarded (control: the gateway is not refusing everything)
+        let ok = AuthContext {
+            id: holder.id(),
+            sig: genuine,
+        };
+        assert!(matches!(
+            gw.process(&request, &ok, msg),
+            GatewayDecision::Forward { backend_id: 1 }
+        ));
+        assert_eq!(gw.secure_stats().auth_failures, 0);
+
+        // forged tokens: an all-zero signature, the genuine signature with one bit flipped, and the genuine
+        // signature presented under another identity's key
+        let mut flipped = genuine.into_bytes();
+        flipped[7] ^= 0x01;
+        let forged = [
+            AuthContext::new(holder.id().into_bytes(), [0u8; 64]),
+            AuthContext::new(holder.id().into_bytes(), flipped),
+            AuthContext {
+                id: other.id(),
+                sig: genuine,
+            },
+        ];
+        for (n, auth) in forged.iter().enumerate() {
+            let decision = gw.process(&request, auth, msg);
+            assert!(
+                matches!(decision, GatewayDecision::Unauthorized),
+                "forged token {n} was not refused"
+            );
+            assert_eq!(
+                gw.secure_stats().auth_failures,
+                n as u64 + 1,
+                "forged token {n} was not counted"
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(all(feature = "auth", feature = "crypto"))]
+    #[test]
+    fn test_secure_gateway_unauthorized() -> Result<(), String> {
+        use crate::http::HttpMethod;
+
+        let mut gw = TestSecureGateway::new(GatewayConfig::default());
+        gw.add_backend(Backend::new(1, b"127.0.0.1", 8080));
+        let mut route = Route::new(b"/");
+        route.add_backend(1);
+        gw.add_route(route);
+
+        let identity = identity()?;
         let auth = AuthContext {
             id: identity.id(),
-            sig: identity.sign(b"wrong message"),
+            sig: sign(&identity, b"wrong message")?,
         };
 
         let mut path = [0u8; 256];
@@ -465,11 +546,12 @@ mod tests {
         let decision = gw.process(&request, &auth, b"GET /");
         assert_eq!(decision, GatewayDecision::Unauthorized);
         assert_eq!(gw.secure_stats().auth_failures, 1);
+        Ok(())
     }
 
     #[cfg(all(feature = "auth", feature = "crypto"))]
     #[test]
-    fn test_secure_gateway_encrypted_pipeline() {
+    fn test_secure_gateway_encrypted_pipeline() -> Result<(), String> {
         use crate::http::HttpMethod;
 
         let mut gw = TestSecureGateway::new(GatewayConfig::default());
@@ -479,14 +561,14 @@ mod tests {
         gw.add_route(route);
 
         // Identity + encryption keys
-        let identity = alice_auth::Identity::gen().unwrap();
+        let identity = identity()?;
         let key = Key::generate().unwrap();
         let nonce = Nonce::generate().unwrap();
 
         let sign_msg = b"POST /";
         let auth = AuthContext {
             id: identity.id(),
-            sig: identity.sign(sign_msg),
+            sig: sign(&identity, sign_msg)?,
         };
 
         // Encrypt body
@@ -519,11 +601,12 @@ mod tests {
         ));
         assert_eq!(plaintext_len, Some(pt_len));
         assert_eq!(&body[..pt_len], plaintext);
+        Ok(())
     }
 
     #[cfg(all(feature = "auth", feature = "crypto"))]
     #[test]
-    fn test_secure_gateway_decrypt_failure() {
+    fn test_secure_gateway_decrypt_failure() -> Result<(), String> {
         use crate::http::HttpMethod;
 
         let mut gw = TestSecureGateway::new(GatewayConfig::default());
@@ -532,7 +615,7 @@ mod tests {
         route.add_backend(1);
         gw.add_route(route);
 
-        let identity = alice_auth::Identity::gen().unwrap();
+        let identity = identity()?;
         let key = Key::generate().unwrap();
         let wrong_key = Key::generate().unwrap();
         let nonce = Nonce::generate().unwrap();
@@ -540,7 +623,7 @@ mod tests {
         let sign_msg = b"POST /";
         let auth = AuthContext {
             id: identity.id(),
-            sig: identity.sign(sign_msg),
+            sig: sign(&identity, sign_msg)?,
         };
 
         // Encrypt with key, try to decrypt with wrong_key
@@ -576,5 +659,6 @@ mod tests {
         assert_eq!(decision, GatewayDecision::DecryptFailed);
         assert_eq!(plaintext_len, None);
         assert_eq!(gw.secure_stats().decrypt_failures, 1);
+        Ok(())
     }
 }
