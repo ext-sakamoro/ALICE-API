@@ -14,8 +14,6 @@ on:
   # the merge base with main there)
   push:
     branches: [main, 'ci/**']
-  pull_request:
-    branches: [main]
   schedule:
     # weekly on a fresh resolve (no Cargo.lock is committed), so a new advisory goes red
     # without a change here; each ALICE repo has its own slot
@@ -170,7 +168,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # CLAUDE.md「仮実装完了偽装の禁止ルール」準拠
+      # 「仮実装完了偽装の禁止ルール」準拠
       - name: Block panic!(STUB) in src/**
         run: |
           set -eo pipefail
@@ -186,7 +184,7 @@ jobs:
             | grep -v ':[[:space:]]*//' | grep -vE ':[[:space:]]*/\*' || true)
           if [ -n "$hits" ]; then
             count=$(echo "$hits" | wc -l | tr -d ' ')
-            echo "::warning::${count} todo!()/unimplemented!() marker(s) (informational, CLAUDE.md legitimate fail-fast idiom)"
+            echo "::warning::${count} todo!()/unimplemented!() marker(s) (informational, legitimate fail-fast idiom)"
           fi
 
       - name: Detect dbg!() residual in src/**

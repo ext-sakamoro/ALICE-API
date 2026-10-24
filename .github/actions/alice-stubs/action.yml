@@ -5,7 +5,7 @@ description: |
   so that ALICE-API can resolve its workspace-relative path deps in CI.
   These crates are private to the local ALICE Eco-System and not on crates.io.
 
-  Canonical CI template: [[reference_alice_ci_canonical_template]]
+  Canonical CI template
 
 runs:
   using: composite

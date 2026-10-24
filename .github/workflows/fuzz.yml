@@ -1,6 +1,5 @@
 name: Fuzz
 
-# canonical CI template: [[reference_alice_ci_canonical_template]]
 # ALICE-Auth を base に ALICE-API 用に調整
 #
 # 目的:
@@ -16,13 +15,6 @@ on:
   push:
     # ci/** runs the whole workflow on a branch before it is landed on main
     branches: [main, "ci/**"]
-    paths:
-      - 'src/**'
-      - 'fuzz/**'
-      - '.github/workflows/fuzz.yml'
-      - '.github/actions/**'
-  pull_request:
-    branches: [main]
     paths:
       - 'src/**'
       - 'fuzz/**'
@@ -75,7 +67,7 @@ jobs:
         run: cargo install cargo-fuzz --locked
 
       # build は blocking: compile error を continue-on-error で隠さない
-      # (canonical 罠 #22: job-level continue-on-error だと fuzz target の
+      # (job-level continue-on-error だと fuzz target の
       #  compile error が green 表示で silent になる)
       - name: Build fuzz target
         run: |

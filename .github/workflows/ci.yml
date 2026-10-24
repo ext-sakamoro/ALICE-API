@@ -1,6 +1,5 @@
 name: CI
 
-# canonical CI template: [[reference_alice_ci_canonical_template]] 手順 4.5 / 4.6
 # 2026-09-15 強化 (それまで fmt + actionlint のみで test / clippy / doc は CI 未実行):
 # - test / clippy / doc を default / `std,ffi` / 全 bridge (`std,ffi,secure,queue,analytics`、real sibling) の 3 段で
 #   `-D warnings` (bridge 2 本の sibling API drift と ffi test の compile error は CI が無くて未検出だった)
@@ -14,8 +13,6 @@ on:
   push:
     # ci/** runs the whole workflow on a branch before it is landed on main
     branches: [main, "ci/**"]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:

@@ -6,7 +6,7 @@
 # Run `--quick` before every push.
 #
 # usage: scripts/preflight.sh [--quick]   (--quick skips the test / bench suites)
-# generator rev fd42953c41f24e7bf3d7a247f664f39c6330c79d
+# generator rev 7b9601a9abf759ed04c7dc9bf2ebd404323370c7
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # --- heavy slot (begin) ---
@@ -247,7 +247,7 @@ step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
 # touching the crate roots invalidates only this repo's fingerprints.
 relint() { git ls-files | grep -E '(^|/)src/(lib|main)\.rs$' | xargs -r touch; }
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing tool: $1 ($2)" >&2; exit 1; }; }
-has_toolchain() { rustup toolchain list | grep -q "^$1"; }
+has_toolchain() { grep -q "^$1" <<<"$(rustup toolchain list)"; }
 
 # Steps CI runs that this file cannot reproduce locally (they can only fail remotely):
 #   - ci.yml:test: uses ./.github/actions/alice-siblings (an action this file cannot run)
@@ -267,17 +267,17 @@ has_toolchain() { rustup toolchain list | grep -q "^$1"; }
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_parse_request_line] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_parse_request_line] (no cargo / grep)
 #   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_parse_request_line] (continue-on-error, runner-only (open-ended or unprovable-bounded fuzz run))
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_parse_request_line] (no cargo / grep)
+#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_parse_request_line] (its `if:` runs on what happened earlier on the runner)
 #   - fuzz.yml:fuzz: uses ./.github/actions/alice-stubs (an action this file cannot run)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_find_content_length] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_find_content_length] (no cargo / grep)
 #   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_find_content_length] (continue-on-error, runner-only (open-ended or unprovable-bounded fuzz run))
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_find_content_length] (no cargo / grep)
+#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_find_content_length] (its `if:` runs on what happened earlier on the runner)
 #   - fuzz.yml:fuzz: uses ./.github/actions/alice-stubs (an action this file cannot run)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_route_match] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_route_match] (no cargo / grep)
 #   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_route_match] (continue-on-error, runner-only (open-ended or unprovable-bounded fuzz run))
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_route_match] (no cargo / grep)
+#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_route_match] (its `if:` runs on what happened earlier on the runner)
 
 need actionlint "brew install actionlint"
 need cargo-audit "cargo install cargo-audit --locked"
@@ -301,12 +301,12 @@ step "ci.yml / no_std: Check (no_std, host)"
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,ffi" BRIDGE_FEATURES="std,ffi,secure,queue,analytics"; cargo check --lib --no-default-features )
 
 step "ci.yml / no_std: Check (no_std, bare-metal aarch64-unknown-none)"
-rustup target list --installed | grep -q '^aarch64-unknown-none$' || rustup target add aarch64-unknown-none
+grep -q '^aarch64-unknown-none$' <<<"$(rustup target list --installed)" || rustup target add aarch64-unknown-none
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,ffi" BRIDGE_FEATURES="std,ffi,secure,queue,analytics"; cargo check --lib --no-default-features --target aarch64-unknown-none )
 
 step "ci.yml / no_std: Clippy (no_std, bare-metal, pedantic)"
 relint
-rustup target list --installed | grep -q '^aarch64-unknown-none$' || rustup target add aarch64-unknown-none
+grep -q '^aarch64-unknown-none$' <<<"$(rustup target list --installed)" || rustup target add aarch64-unknown-none
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,ffi" BRIDGE_FEATURES="std,ffi,secure,queue,analytics"; cargo clippy --lib --no-default-features --target aarch64-unknown-none -- -W clippy::pedantic -D warnings )
 
 step "ci.yml / feature-powerset: Powerset (std + {ffi} depth 2、bridge feature は real sibling job 側)"
@@ -371,7 +371,7 @@ step "security-audit.yml / stub-guard: Detect todo! / unimplemented! (informatio
     | grep -v ':[[:space:]]*//' | grep -vE ':[[:space:]]*/\*' || true)
   if [ -n "$hits" ]; then
     count=$(echo "$hits" | wc -l | tr -d ' ')
-    echo "::warning::${count} todo!()/unimplemented!() marker(s) (informational, CLAUDE.md legitimate fail-fast idiom)"
+    echo "::warning::${count} todo!()/unimplemented!() marker(s) (informational, legitimate fail-fast idiom)"
   fi
 )
 
