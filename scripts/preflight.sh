@@ -250,31 +250,18 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "missing tool: $1 ($2)" >&2; 
 has_toolchain() { grep -q "^$1" <<<"$(rustup toolchain list)"; }
 
 # Steps CI runs that this file cannot reproduce locally (they can only fail remotely):
-#   - ci.yml:test: uses ./.github/actions/alice-siblings (an action this file cannot run)
-#   - ci.yml:test:Test (all bridges, real siblings; at least 211 passed) (needs network / runner-only)
-#   - ci.yml:clippy: uses ./.github/actions/alice-siblings (an action this file cannot run)
-#   - ci.yml:no_std: uses ./.github/actions/alice-stubs (an action this file cannot run)
-#   - ci.yml:feature-powerset: uses ./.github/actions/alice-stubs (an action this file cannot run)
-#   - ci.yml:doc: uses ./.github/actions/alice-siblings (an action this file cannot run)
+#   - ci.yml:test:Test (all bridges, ALICE crates by git rev; at least 211 passed) (needs network / runner-only)
 #   - security-audit.yml:changes:run (needs network / runner-only)
-#   - security-audit.yml:audit: uses ./.github/actions/alice-siblings (an action this file cannot run)
 #   - security-audit.yml:audit:Install cargo-audit (needs network / runner-only)
-#   - security-audit.yml:deny: uses ./.github/actions/alice-siblings (an action this file cannot run)
 #   - security-audit.yml:deny:Install cargo-deny (needs network / runner-only)
-#   - security-audit.yml:unused-deps: uses ./.github/actions/alice-stubs (an action this file cannot run)
-#   - security-audit.yml:coverage:Create ALICE optional bridge stubs (continue-on-error, an action)
-#   - security-audit.yml:semver-checks:Create ALICE optional bridge stubs (continue-on-error, an action)
-#   - fuzz.yml:fuzz: uses ./.github/actions/alice-stubs (an action this file cannot run)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_parse_request_line] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_parse_request_line] (no cargo / grep)
 #   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_parse_request_line] (continue-on-error, runner-only (open-ended or unprovable-bounded fuzz run))
 #   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_parse_request_line] (its `if:` runs on what happened earlier on the runner)
-#   - fuzz.yml:fuzz: uses ./.github/actions/alice-stubs (an action this file cannot run)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_find_content_length] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_find_content_length] (no cargo / grep)
 #   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_find_content_length] (continue-on-error, runner-only (open-ended or unprovable-bounded fuzz run))
 #   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_find_content_length] (its `if:` runs on what happened earlier on the runner)
-#   - fuzz.yml:fuzz: uses ./.github/actions/alice-stubs (an action this file cannot run)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_route_match] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_route_match] (no cargo / grep)
 #   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_route_match] (continue-on-error, runner-only (open-ended or unprovable-bounded fuzz run))
@@ -294,7 +281,7 @@ step "ci.yml / clippy: Clippy (native feature set, pedantic)"
 relint
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,ffi" BRIDGE_FEATURES="std,ffi,secure,queue,analytics"; cargo clippy --features "$NATIVE_FEATURES" --all-targets -- -W clippy::pedantic -D warnings )
 
-step "ci.yml / clippy: Clippy (all bridges, real siblings, pedantic)"
+step "ci.yml / clippy: Clippy (all bridges, ALICE crates by git rev, pedantic)"
 relint
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,ffi" BRIDGE_FEATURES="std,ffi,secure,queue,analytics"; cargo clippy --features "$BRIDGE_FEATURES" --all-targets -- -W clippy::pedantic -D warnings )
 
@@ -330,11 +317,13 @@ step "security-audit.yml / audit: Resolve"
   cargo generate-lockfile
   n=$(grep -c '^name = ' Cargo.lock)
   echo "resolved ${n} packages"
-  while read -r repo _pin; do
-    case "${repo}" in ''|'#'*) continue ;; esac
-    name=$(grep -m1 '^name' "../${repo}/Cargo.toml" | sed 's/.*"\(.*\)".*/\1/')
-    grep -q "^name = \"${name}\"" Cargo.lock || { echo "::error::${name} (${repo}) is not in the resolve"; exit 1; }
-  done < .github/alice-siblings
+  # every ALICE crate the manifest takes by git rev is in the resolve
+  pinned=0
+  while read -r name; do
+    pinned=$((pinned + 1))
+    grep -q "^name = \"${name}\"" Cargo.lock || { echo "::error::${name} is not in the resolve"; exit 1; }
+  done < <(grep -oE '^alice-[a-z0-9-]+ = \{ git = ' Cargo.toml | cut -d' ' -f1)
+  [ "${pinned}" -gt 0 ] || { echo "::error::Cargo.toml takes no alice-* crate by git"; exit 1; }
   [ "${n}" -gt 1 ] || { echo "::error::resolved ${n} packages"; exit 1; }
 )
 
@@ -347,7 +336,7 @@ step "security-audit.yml / deny: Run cargo deny check all"
   python3 scripts/test_deny_graph_guard.py
   cargo deny --all-features list --format json --layout crate > deny-graph.json
   python3 scripts/deny_graph_guard.py --graph deny-graph.json --lock Cargo.lock \
-    --pins .github/alice-siblings --siblings-dir .. --crate alice-api
+    --manifest Cargo.toml --crate alice-api
   cargo deny --all-features check all
 )
 
@@ -460,10 +449,6 @@ step "security-audit.yml / audit: Run cargo audit"
 
 step "security-audit.yml / coverage: Run coverage"
 (
-  [ -d ../ALICE-Analytics ] || { echo 'security-audit.yml / coverage: Run coverage: path dependency ../ALICE-Analytics is not checked out beside this repository (clone it there)' >&2; exit 1; }
-  [ -d ../ALICE-Auth ] || { echo 'security-audit.yml / coverage: Run coverage: path dependency ../ALICE-Auth is not checked out beside this repository (clone it there)' >&2; exit 1; }
-  [ -d ../ALICE-Crypto ] || { echo 'security-audit.yml / coverage: Run coverage: path dependency ../ALICE-Crypto is not checked out beside this repository (clone it there)' >&2; exit 1; }
-  [ -d ../ALICE-Queue ] || { echo 'security-audit.yml / coverage: Run coverage: path dependency ../ALICE-Queue is not checked out beside this repository (clone it there)' >&2; exit 1; }
   log="$(mktemp)"
   set +e
   {
@@ -479,10 +464,6 @@ step "security-audit.yml / coverage: Run coverage"
 
 step "security-audit.yml / semver-checks: Run cargo semver-checks"
 (
-  [ -d ../ALICE-Analytics ] || { echo 'security-audit.yml / semver-checks: Run cargo semver-checks: path dependency ../ALICE-Analytics is not checked out beside this repository (clone it there)' >&2; exit 1; }
-  [ -d ../ALICE-Auth ] || { echo 'security-audit.yml / semver-checks: Run cargo semver-checks: path dependency ../ALICE-Auth is not checked out beside this repository (clone it there)' >&2; exit 1; }
-  [ -d ../ALICE-Crypto ] || { echo 'security-audit.yml / semver-checks: Run cargo semver-checks: path dependency ../ALICE-Crypto is not checked out beside this repository (clone it there)' >&2; exit 1; }
-  [ -d ../ALICE-Queue ] || { echo 'security-audit.yml / semver-checks: Run cargo semver-checks: path dependency ../ALICE-Queue is not checked out beside this repository (clone it there)' >&2; exit 1; }
   log="$(mktemp)"
   set +e
   {

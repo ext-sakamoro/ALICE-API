@@ -4,8 +4,8 @@
 # ALICE-Auth の deny.toml を base に ALICE-API 用に調整
 #
 # ALICE-API 自体は LicenseRef-Proprietary (publish = false なので [licenses.private] で除外)
-# sibling stubs (alice-auth / alice-crypto / alice-queue / alice-analytics) は
-# alice-stubs action で "MIT OR Apache-2.0" で生成される
+# alice-auth / alice-crypto / alice-queue / alice-analytics は Cargo.toml が git の rev で引き、
+# license はそれぞれの crate の実物で判定される
 
 [graph]
 all-features = false
@@ -93,7 +93,14 @@ skip-tree = []
 unknown-registry = "warn"
 unknown-git = "warn"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+allow-git = [
+    "https://github.com/ext-sakamoro/ALICE-Analytics",
+    "https://github.com/ext-sakamoro/ALICE-Auth",
+    "https://github.com/ext-sakamoro/ALICE-Crypto",
+    "https://github.com/ext-sakamoro/ALICE-DetMath",
+    "https://github.com/ext-sakamoro/ALICE-Queue",
+    "https://github.com/ext-sakamoro/ALICE-Sign",
+]
 
 [sources.allow-org]
 

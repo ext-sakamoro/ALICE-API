@@ -26,13 +26,13 @@ log = "0.4"
 # For zero-copy syscalls (splice, sendfile) — routing module (std 専用) のみ
 libc = { version = "0.2", optional = true }
 # Optional: Ed25519 ZKP authentication
-alice-auth = { path = "../ALICE-Auth", optional = true, default-features = false, features = ["std"] }
+alice-auth = { git = "https://github.com/ext-sakamoro/ALICE-Auth", rev = "2f71a2354315f7eb0ec5646810c77feedaba5541", version = "0.6", optional = true, default-features = false, features = ["std"] }
 # Optional: XChaCha20-Poly1305 encryption
-alice-crypto = { path = "../ALICE-Crypto", optional = true, default-features = false, features = ["std"] }
+alice-crypto = { git = "https://github.com/ext-sakamoro/ALICE-Crypto", rev = "4ab0f0e6c1cba949c949add9d5aedc98e080a4be", version = "0.6", optional = true, default-features = false, features = ["std"] }
 # Optional: Message queueing
-alice-queue = { path = "../ALICE-Queue", optional = true }
+alice-queue = { git = "https://github.com/ext-sakamoro/ALICE-Queue", rev = "46b3d5e56c81883237b822af915211db1dde15d2", version = "0.2", optional = true }
 # Optional: API metrics collection
-alice-analytics = { path = "../ALICE-Analytics", optional = true, default-features = false, features = ["std"] }
+alice-analytics = { git = "https://github.com/ext-sakamoro/ALICE-Analytics", rev = "f3a58e3acd486441ae1c70efbaff6acdbbfdeed9", version = "0.7", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 criterion = "0.5"

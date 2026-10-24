@@ -5,6 +5,7 @@ All notable changes to ALICE-API will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- 依存: alice-auth / alice-crypto / alice-queue / alice-analytics (feature `auth` / `crypto` / `queue` / `analytics`) を隣の checkout の path でなく git の rev で引く (Auth 2f71a23 0.6 / Crypto 4ab0f0e 0.6 / Queue 46b3d5e 0.2 / Analytics f3a58e3 0.7、各 main) `deny.toml` の `allow-git` にこの 4 つと、それらが git で引く ALICE-DetMath / ALICE-Sign を足した CI と preflight から sibling を clone する step と空の stub を作る step を外し、`.github/alice-siblings` と 2 つの composite action を削除した stub で解決していた job (no_std / feature-powerset / unused-deps / coverage / semver-checks / fuzz) も実物の crate で解決する `scripts/deny_graph_guard.py` は `--pins` / `--siblings-dir` の代わりに `--manifest` を取り、Cargo.toml が git の rev で引く `alice-*` が cargo deny の graph にあり、解決がその rev から取ったことを確かめる (試験に 2 件: 別の commit から解決した / rev の無い git 依存)
 - Licence: `AGPL-3.0 OR LicenseRef-Commercial` → `LicenseRef-Proprietary`
 - CI: ci.yml / fuzz.yml を `ci/**` の branch でも走らせ、ci.yml に手動実行を足し、main の run は打ち切らない concurrency にした (main に入れる前に branch で全 workflow を通すため)
 - CI: cargo deny の検査の前に、cargo deny が解いた crate の graph (json) がこの crate と固定した sibling を全て含み、解決した package 数を超えないことを `scripts/deny_graph_guard.py` で確かめる (試験 `scripts/test_deny_graph_guard.py`: 空の graph・この crate や sibling の欠け・解決より多い・空の解決は失敗) 以前は license ごとの行数を数えていた

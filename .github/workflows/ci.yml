@@ -6,8 +6,8 @@ name: CI
 # - no_std job: host + bare-metal `aarch64-unknown-none` (gcra の AtomicU64 のため 64-bit、rust-toolchain.toml の
 #   `targets` で pinned toolchain 側に install) routing (libc / splice / sendfile) は std 専用、HTTP parsing は
 #   `http` module に分離して no_std で使える
-# - feature-powerset: std 固定 depth 2 (sibling bridge feature は除外、real sibling job 側で検証)
-# - sibling は alice-siblings (real clone、全 public) / 解決のみで良い job は alice-stubs
+# - feature-powerset: std 固定 depth 2 (bridge feature は除外、test / clippy / doc の bridge 段で検証)
+# - ALICE の crate (alice-auth / alice-crypto / alice-queue / alice-analytics) は Cargo.toml が git の rev で引く
 
 on:
   push:
@@ -27,19 +27,17 @@ env:
 
 jobs:
   test:
-    name: Test (default / native / bridges with real siblings)
+    name: Test (default / native / bridges with the ALICE crates by git rev)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Checkout ALICE-* siblings (real crates)
-        uses: ./.github/actions/alice-siblings
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Test (default)
         run: cargo test
       - name: Test (native feature set)
         run: cargo test --features "$NATIVE_FEATURES"
-      - name: Test (all bridges, real siblings; at least 211 passed)
+      - name: Test (all bridges, ALICE crates by git rev; at least 211 passed)
         run: |
           set -o pipefail
           log=$(mktemp)
@@ -51,8 +49,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Checkout ALICE-* siblings (real crates)
-        uses: ./.github/actions/alice-siblings
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -62,7 +58,7 @@ jobs:
         run: cargo clippy --all-targets -- -W clippy::pedantic -D warnings
       - name: Clippy (native feature set, pedantic)
         run: cargo clippy --features "$NATIVE_FEATURES" --all-targets -- -W clippy::pedantic -D warnings
-      - name: Clippy (all bridges, real siblings, pedantic)
+      - name: Clippy (all bridges, ALICE crates by git rev, pedantic)
         run: cargo clippy --features "$BRIDGE_FEATURES" --all-targets -- -W clippy::pedantic -D warnings
 
   no_std:
@@ -70,8 +66,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -88,8 +82,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-hack
@@ -113,8 +105,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Checkout ALICE-* siblings (real crates)
-        uses: ./.github/actions/alice-siblings
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Doc
