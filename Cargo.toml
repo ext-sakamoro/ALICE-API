@@ -2,9 +2,9 @@
 name = "alice-api"
 version = "0.1.0"
 edition = "2021"
-authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
+authors = ["Moroya Sakamoto"]
 description = "High-performance API Gateway with Distributed Rate Limiting and Zero-Copy Routing"
-license = "AGPL-3.0 OR LicenseRef-Commercial"
+license = "LicenseRef-Proprietary"
 repository = "https://github.com/anthropics/alice-api"
 keywords = ["api-gateway", "rate-limiting", "gcra", "zero-copy"]
 categories = ["network-programming", "web-programming"]

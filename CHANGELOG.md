@@ -5,6 +5,7 @@ All notable changes to ALICE-API will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- Licence: `AGPL-3.0 OR LicenseRef-Commercial` → `LicenseRef-Proprietary`
 - CI: ci.yml / fuzz.yml を `ci/**` の branch でも走らせ、ci.yml に手動実行を足し、main の run は打ち切らない concurrency にした (main に入れる前に branch で全 workflow を通すため)
 - CI: cargo deny の検査の前に、cargo deny が解いた crate の graph (json) がこの crate と固定した sibling を全て含み、解決した package 数を超えないことを `scripts/deny_graph_guard.py` で確かめる (試験 `scripts/test_deny_graph_guard.py`: 空の graph・この crate や sibling の欠け・解決より多い・空の解決は失敗) 以前は license ごとの行数を数えていた
 - CI: advisory の検査 (cargo audit / cargo deny --all-features) を空の stub でなく `.github/alice-siblings` の commit に固定した実物の sibling (Analytics / Auth / Crypto / Queue、Auth は今の API で build できないため 2026-09 時点の commit に固定) で毎回新しく解決して行う sibling 経由で入る依存 (alice-crypto → blake3 → digest → ctutils 等) の advisory も見える 解決した package 数と sibling の包含、cargo audit の走査数が 0 なら失敗 週次は火曜 03:17 UTC (repo ごとに時刻をずらす)、変更の判定は changes job が main との merge base から取る (ci/ の初回も見る) build / test の sibling も固定の commit になり、不要になった非公開 sibling の clone と token を外した

@@ -4,7 +4,7 @@
 # canonical CI template: [[reference_alice_ci_canonical_template]]
 # ALICE-Auth の deny.toml を base に ALICE-API 用に調整
 #
-# ALICE-API 自体は AGPL-3.0 だが、target crate なので self-exception で許可
+# ALICE-API 自体は LicenseRef-Proprietary (publish = false なので [licenses.private] で除外)
 # sibling stubs (alice-auth / alice-crypto / alice-queue / alice-analytics) は
 # alice-stubs action で "MIT OR Apache-2.0" で生成される (canonical 罠 #2 予防)
 
@@ -60,6 +60,10 @@ allow = [
     "CDLA-Permissive-2.0",
 ]
 
+# workspace crates are not checked against the allow list
+[licenses.private]
+ignore = true
+
 [[licenses.clarify]]
 name = "ring"
 version = "*"
@@ -72,16 +76,6 @@ version = "*"
 expression = "ISC"
 license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
 
-# ALICE-API 自身 (target crate) が AGPL-3.0 だが cargo-deny は target も
-# license check 対象にするため exception で自己許可
-# (canonical [[reference_alice_ci_canonical_template]] 罠 #7)
-[[licenses.exceptions]]
-name = "alice-api"
-allow = ["AGPL-3.0", "AGPL-3.0-only"]
-
-# ---------------------------------------------------------------------------
-# Bans (banned crate / duplicate / wildcard)
-# ---------------------------------------------------------------------------
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"   # path dep が wildcard version になるため必須
