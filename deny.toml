@@ -97,7 +97,7 @@ allow-git = []
 
 [sources.allow-org]
 
-# Sibling ALICE crates carry their own license (AGPL / commercial dual). CI
+# Sibling ALICE crates carry their own license. CI
 # builds some of them as MIT stubs, the local preflight sees the real crates:
 # allow each explicitly.
 
