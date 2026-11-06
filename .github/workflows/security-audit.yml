@@ -261,6 +261,7 @@ jobs:
       # baseline は repo の隣に置く: ../ALICE-* の path 依存が解ける場所でないと build できない
       # (--baseline-rev は target/ の下に展開するので解けない)
       # 比較した check の数が 0 なら fail: build できずに何も比べなかった run を通さない
+      # 例外は版の major を上げた時だけ (tool が全 check を飛ばし、その旨を log に書く)
       - name: Run cargo semver-checks
         run: |
           set -o pipefail
@@ -271,5 +272,5 @@ jobs:
           git worktree add -q --detach "$baseline" "$base"
           trap 'git worktree remove --force "$baseline"' EXIT
           cargo semver-checks check-release --package alice-api --baseline-root "$baseline" 2>&1 | tee "$log"
-          python3 -c 'import re, sys; t = re.sub(r"\x1b\[[0-9;]*m", "", open(sys.argv[1]).read()); m = re.search(r"Checked \[.*?\] (\d+) checks: (\d+) pass", t); n = int(m.group(1)) if m else 0; print(f"semver-checks: {n} checks compared"); sys.exit(0 if n > 0 else 1)' "$log"
+          python3 -c 'import re, sys; t = re.sub(r"\x1b\[[0-9;]*m", "", open(sys.argv[1]).read()); m = re.search(r"Checked \[.*?\] (\d+) checks: (\d+) pass", t); n = int(m.group(1)) if m else 0; major = m is not None and re.search(r"Checking \S+ v\S+ -> v\S+ \(major change\)", t) is not None; print(f"semver-checks: {n} checks compared" + (" (major version change: nothing is checked against it)" if major and n == 0 else "")); sys.exit(0 if n > 0 or major else 1)' "$log"
 
