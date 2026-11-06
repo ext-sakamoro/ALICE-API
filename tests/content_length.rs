@@ -8,7 +8,7 @@
 //! - RFC 9112 §2.2: lines end in CRLF; a bare CR is invalid; a bare LF MAY be recognised, and is not
 //!   here (`find_header_end` looks for CRLF CRLF only); whitespace before the first field is rejected
 //! - RFC 9112 §3: `request-line = method SP request-target SP HTTP-version`;
-//!   `HTTP-version = "HTTP/" DIGIT "." DIGIT`; RFC 9110 §9.1: `method = token`
+//!   §2.3: `HTTP-version = "HTTP/" DIGIT "." DIGIT`; RFC 9110 §9.1: `method = token`
 //! - RFC 9110 §5.1: `field-name = token`; RFC 9112 §5: a field line has a colon
 //! - RFC 9112 §6.3: an invalid Content-Length is an unrecoverable framing error
 //! - RFC 9110 §5.1: field names are case-insensitive
