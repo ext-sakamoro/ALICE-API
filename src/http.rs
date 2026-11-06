@@ -75,35 +75,152 @@ pub fn parse_request_line(buf: &[u8]) -> Option<(RequestLine<'_>, usize)> {
     ))
 }
 
-/// Find Content-Length header value
-#[must_use]
-pub fn find_content_length(headers: &[u8]) -> Option<usize> {
-    // Simple linear search for "Content-Length: "
-    const NEEDLE: &[u8] = b"Content-Length:";
+/// Why a header section has no usable `Content-Length`
+///
+/// Every variant means the message framing is unknown, so a caller must not read a body by
+/// guessing a length: RFC 9112 §6.3 makes an invalid `Content-Length` an unrecoverable error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ContentLengthError {
+    /// The value is not `1*DIGIT`, or the line it is on breaks the field-line grammar
+    Invalid,
+    /// The value is `1*DIGIT` and larger than `usize::MAX`
+    Overflow,
+    /// The field appears more than once
+    Duplicate,
+    /// The input ends before the empty line that ends the header section
+    Incomplete,
+}
 
-    let mut i = 0;
-    while i + NEEDLE.len() < headers.len() {
-        if headers[i..].starts_with(NEEDLE) || headers[i..].starts_with(b"content-length:") {
-            // Find value start (skip whitespace)
-            let value_start = i + NEEDLE.len();
-            let mut j = value_start;
-            while j < headers.len() && headers[j] == b' ' {
-                j += 1;
-            }
-
-            // Parse number
-            let mut value = 0usize;
-            while j < headers.len() && headers[j].is_ascii_digit() {
-                value = value * 10 + (headers[j] - b'0') as usize;
-                j += 1;
-            }
-
-            return Some(value);
-        }
-        i += 1;
+impl core::fmt::Display for ContentLengthError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::Invalid => "invalid Content-Length or field line",
+            Self::Overflow => "Content-Length larger than usize::MAX",
+            Self::Duplicate => "more than one Content-Length",
+            Self::Incomplete => "header section has no end",
+        })
     }
+}
 
-    None
+#[cfg(feature = "std")]
+impl std::error::Error for ContentLengthError {}
+
+/// The field name, compared without regard to case (RFC 9110 §5.1)
+const CONTENT_LENGTH: &[u8] = b"content-length";
+
+const fn is_ows(b: u8) -> bool {
+    b == b' ' || b == b'\t'
+}
+
+fn trim_ows(mut v: &[u8]) -> &[u8] {
+    while let [first, rest @ ..] = v {
+        if !is_ows(*first) {
+            break;
+        }
+        v = rest;
+    }
+    while let [rest @ .., last] = v {
+        if !is_ows(*last) {
+            break;
+        }
+        v = rest;
+    }
+    v
+}
+
+/// `1*DIGIT` as a `usize`
+fn parse_digits(value: &[u8]) -> Result<usize, ContentLengthError> {
+    if value.is_empty() || !value.iter().all(u8::is_ascii_digit) {
+        return Err(ContentLengthError::Invalid);
+    }
+    let mut n = 0usize;
+    for &digit in value {
+        n = n
+            .checked_mul(10)
+            .and_then(|n| n.checked_add(usize::from(digit - b'0')))
+            .ok_or(ContentLengthError::Overflow)?;
+    }
+    Ok(n)
+}
+
+/// The value of the `Content-Length` field of a header section
+///
+/// `headers` holds the section with or without its request line, through the empty line that ends
+/// it: `&buf[..find_header_end(buf)?]`, or a longer slice, since nothing after that line is read.
+///
+/// `Ok(None)` means the section is complete and has no such field; `Err` means the framing cannot be
+/// known from this input. The grammar is RFC 9112 §5 with `Content-Length = 1*DIGIT` (RFC 9110 §8.6):
+///
+/// - the name is matched at the start of a line, in any case, and only as a whole field name
+/// - the value may have spaces and tabs around it, and is otherwise only digits, up to `usize::MAX`
+/// - a repeated field is rejected even when the values are equal. RFC 9110 §8.6 allows merging
+///   equal values or rejecting; rejecting leaves no case in which two readers of one message differ
+/// - lines end in CRLF: a bare CR or LF is rejected, like `find_header_end`, which looks for CRLF
+///   only (RFC 9112 §2.2 lets a recipient accept a bare LF, and does not require it)
+/// - whitespace before the colon, or a folded line that continues or looks like this field, is rejected
+///
+/// This is one part of message framing. A caller must still handle `Transfer-Encoding`, which
+/// overrides `Content-Length` (RFC 9112 §6.3); this function does not read it.
+///
+/// # Errors
+///
+/// See [`ContentLengthError`].
+pub fn find_content_length(headers: &[u8]) -> Result<Option<usize>, ContentLengthError> {
+    let mut found = None;
+    let mut rest = headers;
+    let mut at_start = true;
+    let mut after_content_length = false;
+    loop {
+        let lf = rest
+            .iter()
+            .position(|&b| b == b'\n')
+            .ok_or(ContentLengthError::Incomplete)?;
+        let (line, next) = (&rest[..lf], &rest[lf + 1..]);
+        rest = next;
+        let line = line
+            .strip_suffix(b"\r")
+            .ok_or(ContentLengthError::Invalid)?;
+        if line.contains(&b'\r') {
+            return Err(ContentLengthError::Invalid);
+        }
+        if line.is_empty() {
+            // an empty line before the request line is ignored (RFC 9112 §2.2)
+            if at_start && !rest.is_empty() {
+                continue;
+            }
+            return Ok(found);
+        }
+        at_start = false;
+
+        let name_end = line.iter().position(|&b| b == b':');
+        let (name, value) = match name_end {
+            Some(colon) => (&line[..colon], &line[colon + 1..]),
+            None => (line, &line[line.len()..]),
+        };
+        let bare_name = trim_ows(name);
+
+        if is_ows(line[0]) {
+            // a folded line (RFC 9112 §5.2): part of the field before it, unless that is this
+            // field or the line reads as this field
+            if after_content_length || bare_name.eq_ignore_ascii_case(CONTENT_LENGTH) {
+                return Err(ContentLengthError::Invalid);
+            }
+            continue;
+        }
+        after_content_length = false;
+
+        if name_end.is_some() && bare_name.eq_ignore_ascii_case(CONTENT_LENGTH) {
+            if name.len() != bare_name.len() {
+                return Err(ContentLengthError::Invalid);
+            }
+            if found.is_some() {
+                return Err(ContentLengthError::Duplicate);
+            }
+            found = Some(parse_digits(trim_ows(value))?);
+            after_content_length = true;
+        }
+    }
 }
 
 /// Find header end (double CRLF)
@@ -139,10 +256,10 @@ mod tests {
     #[test]
     fn test_find_content_length() {
         let headers = b"Host: example.com\r\nContent-Length: 42\r\nAccept: */*\r\n\r\n";
-        assert_eq!(find_content_length(headers), Some(42));
+        assert_eq!(find_content_length(headers), Ok(Some(42)));
 
         let no_cl = b"Host: example.com\r\nAccept: */*\r\n\r\n";
-        assert_eq!(find_content_length(no_cl), None);
+        assert_eq!(find_content_length(no_cl), Ok(None));
     }
 
     #[test]
@@ -226,27 +343,26 @@ mod tests {
     #[test]
     fn test_find_content_length_large_value() {
         let headers = b"Content-Length: 1048576\r\n\r\n";
-        assert_eq!(find_content_length(headers), Some(1_048_576));
+        assert_eq!(find_content_length(headers), Ok(Some(1_048_576)));
     }
 
     #[test]
     fn test_find_content_length_zero() {
         let headers = b"Content-Length: 0\r\n\r\n";
-        assert_eq!(find_content_length(headers), Some(0));
+        assert_eq!(find_content_length(headers), Ok(Some(0)));
     }
 
     #[test]
     fn test_find_content_length_lowercase() {
-        // The implementation also checks lowercase "content-length:"
         let headers = b"content-length: 512\r\n\r\n";
-        assert_eq!(find_content_length(headers), Some(512));
+        assert_eq!(find_content_length(headers), Ok(Some(512)));
     }
 
     #[test]
     fn test_find_content_length_with_spaces() {
         // Leading space after colon
         let headers = b"Content-Length:   100\r\n\r\n";
-        assert_eq!(find_content_length(headers), Some(100));
+        assert_eq!(find_content_length(headers), Ok(Some(100)));
     }
 
     #[test]
