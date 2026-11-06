@@ -1,5 +1,5 @@
 #![no_main]
-use alice_api::routing::{find_content_length, find_header_end};
+use alice_api::routing::{find_content_length, find_header_end, split_message_head};
 use libfuzzer_sys::fuzz_target;
 
 // Fuzz HTTP header parsers (Content-Length + header-end detection) with
@@ -15,6 +15,12 @@ fuzz_target!(|data: &[u8]| {
     let whole = find_content_length(data);
     if let Some(end) = find_header_end(data) {
         assert_eq!(find_content_length(&data[..end]), whole);
+    }
+
+    // what follows a request line is a suffix of the input, and reads like any field section
+    if let Ok((_, fields)) = split_message_head(data) {
+        assert!(data.ends_with(fields));
+        let _ = find_content_length(fields);
     }
 
     // find_header_end must never panic

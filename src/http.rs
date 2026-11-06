@@ -52,8 +52,9 @@ pub struct RequestLine<'a> {
 /// Parse just the request line for routing (no body parsing)
 ///
 /// Returns (`RequestLine`, `line_end`) or None if incomplete. `line_end` is the index of the byte
-/// that ends the request line (its CR or LF), not the start or end of the header fields: find those
-/// with [`find_header_end`], and pass [`find_content_length`] the buffer from its start.
+/// that ends the request line (its CR or LF), not the start or end of the header fields. This reads
+/// for routing and does not check the grammar: [`split_message_head`] does, and gives the field
+/// section for [`find_content_length`].
 #[must_use]
 pub fn parse_request_line(buf: &[u8]) -> Option<(RequestLine<'_>, usize)> {
     // Find first line ending
@@ -154,31 +155,21 @@ fn is_token(name: &[u8]) -> bool {
             .all(|&b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
 }
 
-/// `method SP request-target SP HTTP-version` (RFC 9112 §3), as far as telling it from a field line
-/// needs: three words, the last one naming the protocol
-fn is_request_line(line: &[u8]) -> bool {
-    let mut words = line.split(|&b| b == b' ');
-    words.next().is_some_and(|w| !w.is_empty())
-        && words.next().is_some_and(|w| !w.is_empty())
-        && words.next().is_some_and(|w| w.starts_with(b"HTTP/"))
-        && words.next().is_none()
-}
-
 /// What the line before this one was: a folded line continues only a field line
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Previous {
     Nothing,
-    RequestLine,
     Field,
     ContentLength,
 }
 
 /// The value of the `Content-Length` field of a header section
 ///
-/// `headers` holds the section from its first line, the request line or the first field, through
-/// the empty line that ends it: the whole buffer, or `&buf[..find_header_end(buf)?]`. Nothing after
-/// that line is read. A slice that begins at the end of the request line is not such an input: it
-/// is rejected, since what follows an empty line may be a body or the next message.
+/// `fields` is a field section and nothing else: from its first field line through the empty line
+/// that ends it. Nothing after that line is read. A caller holding a whole head gets the section
+/// from [`split_message_head`]; this function does not guess whether a request line comes first.
+/// `\r\n` is the empty section, and anything else that starts with CRLF is rejected, since what
+/// follows an empty line is a body or the next message.
 ///
 /// `Ok(None)` means the section is complete and has no such field; `Err` means the framing cannot be
 /// known from this input. The grammar is RFC 9112 §5 with `Content-Length = 1*DIGIT` (RFC 9110 §8.6):
@@ -189,9 +180,9 @@ enum Previous {
 ///   equal values or rejecting; rejecting leaves no case in which two readers of one message differ
 /// - lines end in CRLF: a bare CR or LF is rejected, like `find_header_end`, which looks for CRLF
 ///   only (RFC 9112 §2.2 lets a recipient accept a bare LF, and does not require it)
-/// - every line but a first request line is a field line: a token, a colon, a value. Anything else
-///   is rejected, as is whitespace before the colon, whitespace before the first field, and a folded
-///   line that continues or looks like this field. `\r\n` alone is a section with no fields
+/// - every line is a field line: a token, a colon, a value. Anything else is rejected, as is
+///   whitespace before the colon, whitespace before the first field, and a folded line that
+///   continues or looks like this field
 ///
 /// This is one part of message framing. A caller must still handle `Transfer-Encoding`, which
 /// overrides `Content-Length` (RFC 9112 §6.3); this function does not read it.
@@ -199,9 +190,9 @@ enum Previous {
 /// # Errors
 ///
 /// See [`ContentLengthError`].
-pub fn find_content_length(headers: &[u8]) -> Result<Option<usize>, ContentLengthError> {
+pub fn find_content_length(fields: &[u8]) -> Result<Option<usize>, ContentLengthError> {
     let mut found = None;
-    let mut rest = headers;
+    let mut rest = fields;
     let mut previous = Previous::Nothing;
     loop {
         let lf = rest
@@ -232,10 +223,6 @@ pub fn find_content_length(headers: &[u8]) -> Result<Option<usize>, ContentLengt
             }
             continue;
         }
-        if previous == Previous::Nothing && is_request_line(line) {
-            previous = Previous::RequestLine;
-            continue;
-        }
         let colon = colon.ok_or(ContentLengthError::Invalid)?;
         let (name, value) = (&line[..colon], &line[colon + 1..]);
         if !is_token(name) {
@@ -250,6 +237,75 @@ pub fn find_content_length(headers: &[u8]) -> Result<Option<usize>, ContentLengt
             previous = Previous::ContentLength;
         }
     }
+}
+
+/// Why a message head has no request line
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum HeadError {
+    /// The first line does not follow `method SP request-target SP HTTP-version CRLF`
+    Invalid,
+    /// The input ends before the first line does
+    Incomplete,
+}
+
+impl core::fmt::Display for HeadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::Invalid => "invalid request line",
+            Self::Incomplete => "request line has no end",
+        })
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for HeadError {}
+
+/// `HTTP-version = "HTTP/" DIGIT "." DIGIT` (RFC 9112 §2.3)
+fn is_http_version(v: &[u8]) -> bool {
+    matches!(v, [b'H', b'T', b'T', b'P', b'/', major, b'.', minor]
+        if major.is_ascii_digit() && minor.is_ascii_digit())
+}
+
+/// A request target as far as finding its end needs: no controls, no space, not empty
+fn is_request_target(t: &[u8]) -> bool {
+    !t.is_empty() && t.iter().all(|&b| b > b' ' && b != 0x7f)
+}
+
+/// Split a message head into its request line and its field section
+///
+/// `head` starts at the request line, `method SP request-target SP HTTP-version CRLF` (RFC 9112 §3),
+/// with exactly one space between the parts. The second result is everything after that CRLF; cut
+/// `head` at [`find_header_end`] first, and it is the field section for [`find_content_length`].
+/// RFC 9112 §2.2 says a server SHOULD ignore an empty line before a request line; this rejects it.
+///
+/// # Errors
+///
+/// [`HeadError::Incomplete`] if the first line has no end, [`HeadError::Invalid`] if it breaks the
+/// grammar.
+pub fn split_message_head(head: &[u8]) -> Result<(RequestLine<'_>, &[u8]), HeadError> {
+    let lf = head
+        .iter()
+        .position(|&b| b == b'\n')
+        .ok_or(HeadError::Incomplete)?;
+    let line = head[..lf].strip_suffix(b"\r").ok_or(HeadError::Invalid)?;
+    let mut parts = line.split(|&b| b == b' ');
+    let (Some(method), Some(path), Some(version), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return Err(HeadError::Invalid);
+    };
+    if !is_token(method) || !is_request_target(path) || !is_http_version(version) {
+        return Err(HeadError::Invalid);
+    }
+    Ok((
+        RequestLine {
+            method: HttpMethod::from_bytes(method),
+            path,
+            version,
+        },
+        &head[lf + 1..],
+    ))
 }
 
 /// Find header end (double CRLF)

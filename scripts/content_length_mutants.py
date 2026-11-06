@@ -65,19 +65,9 @@ MUTANTS = [
         "let Some(colon) = colon else { continue };",
     ),
     (
-        "any first line is a request line",
-        "if previous == Previous::Nothing && is_request_line(line) {",
-        "if previous == Previous::Nothing && line.contains(&b' ') {",
-    ),
-    (
-        "a request line anywhere",
-        "if previous == Previous::Nothing && is_request_line(line) {",
-        "if is_request_line(line) {",
-    ),
-    (
         "a fold of this field allowed",
         "if previous != Previous::Field || reads_as_this_field {",
-        "if previous == Previous::Nothing || previous == Previous::RequestLine || reads_as_this_field {",
+        "if previous == Previous::Nothing || reads_as_this_field {",
     ),
     (
         "a fold after no field allowed",
@@ -94,6 +84,15 @@ MUTANTS = [
         "        previous = Previous::Field;\n        if name",
         "        if name",
     ),
+    ("a head needs no CR", 'head[..lf].strip_suffix(b"\\r").ok_or(HeadError::Invalid)?', 'head[..lf].strip_suffix(b"\\r").unwrap_or(&head[..lf])'),
+    ("method need not be a token", "!is_token(method) || ", ""),
+    ("target not checked", "!is_request_target(path) || ", ""),
+    ("target may be empty", "!t.is_empty() && t.iter()", "t.iter()"),
+    ("target may hold a control", "b > b' ' && b != 0x7f", "b != b' '"),
+    ("version not checked", " || !is_http_version(version)", ""),
+    ("version may be two digits", "major.is_ascii_digit() && minor.is_ascii_digit()", "major.is_ascii_digit()"),
+    ("a fourth word allowed", "(parts.next(), parts.next(), parts.next(), parts.next())", "(parts.next(), parts.next(), parts.next(), None::<&[u8]>)"),
+    ("fields start at the line feed", "&head[lf + 1..],", "&head[lf..],"),
     ("no OWS trimmed", "parse_digits(trim_ows(value))", "parse_digits(value)"),
     ("only leading OWS trimmed", "while let [rest @ .., last] = v {", "while let [rest @ .., last] = &v[..0] {"),
 ]

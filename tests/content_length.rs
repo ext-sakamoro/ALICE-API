@@ -1,4 +1,4 @@
-//! `find_content_length` against the grammar of RFC 9110 / RFC 9112.
+//! `find_content_length` and `split_message_head` against the grammar of RFC 9110 / RFC 9112.
 //!
 //! oracle: the expected column is written from the RFCs, not from the code. References:
 //! - RFC 9110 §8.6: `Content-Length = 1*DIGIT`; a list or repeated field MAY be rejected
@@ -7,13 +7,19 @@
 //! - RFC 9112 §5.2: a line folded with leading whitespace is obsolete and may be rejected
 //! - RFC 9112 §2.2: lines end in CRLF; a bare CR is invalid; a bare LF MAY be recognised, and is not
 //!   here (`find_header_end` looks for CRLF CRLF only); whitespace before the first field is rejected
+//! - RFC 9112 §3: `request-line = method SP request-target SP HTTP-version`;
+//!   `HTTP-version = "HTTP/" DIGIT "." DIGIT`; RFC 9110 §9.1: `method = token`
 //! - RFC 9110 §5.1: `field-name = token`; RFC 9112 §5: a field line has a colon
-//! - an empty line ends the section, so one at the start of the input with bytes after it is a slice
-//!   that begins after the end of a section: what follows is the body or the next message. RFC 9112
-//!   §2.2 lets a server ignore an empty line before a request line; this function rejects it instead,
-//!   since it cannot tell the two apart
 //! - RFC 9112 §6.3: an invalid Content-Length is an unrecoverable framing error
 //! - RFC 9110 §5.1: field names are case-insensitive
+//!
+//! `find_content_length` takes one input: a field section, from its first field line through the
+//! empty line that ends it. It does not guess whether a request line comes first, so a request line
+//! there is a line that is not a field line. `\r\n` is the empty section; anything else that starts
+//! with CRLF is rejected, since what follows an empty line is a body or the next message. RFC 9112
+//! §2.2 says a server SHOULD ignore an empty line before a request line; `split_message_head` does
+//! not, since a parser that skips one can be made to read past the end of a section. A caller
+//! holding a whole head uses `split_message_head` to get the field section.
 //!
 //! `usize` is the limit of the value: `usize::MAX` parses and one more is an overflow. On a
 //! 64-bit target those are 2^64-1 and 2^64 (written out in `limit_of_a_64_bit_usize`).
@@ -21,7 +27,10 @@
 //! The bug this pins differed by profile (a panic with overflow checks, a wrapped length without
 //! them), so CI runs this file in debug and in release.
 
-use alice_api::http::{find_content_length, ContentLengthError};
+use alice_api::http::{
+    find_content_length, find_header_end, split_message_head, ContentLengthError, HeadError,
+    HttpMethod,
+};
 use ContentLengthError::{Duplicate, Incomplete, Invalid, Overflow};
 
 type Expected = Result<Option<usize>, ContentLengthError>;
@@ -33,7 +42,7 @@ const TABLE: &[(&str, &[u8], Expected)] = &[
     (
         "request line, no field",
         b"POST / HTTP/1.1\r\nHost: a\r\n\r\n",
-        Ok(None),
+        Err(Invalid),
     ),
     // valid
     ("plain", b"Content-Length: 42\r\n\r\n", Ok(Some(42))),
@@ -46,7 +55,7 @@ const TABLE: &[(&str, &[u8], Expected)] = &[
     (
         "after a request line",
         b"POST / HTTP/1.1\r\nContent-Length: 42\r\n\r\n",
-        Ok(Some(42)),
+        Err(Invalid),
     ),
     (
         "leading zeros are 1*DIGIT",
@@ -154,7 +163,7 @@ const TABLE: &[(&str, &[u8], Expected)] = &[
     (
         "in a request target",
         b"GET /Content-Length:5 HTTP/1.1\r\n\r\n",
-        Ok(None),
+        Err(Invalid),
     ),
     (
         "in a value before the field",
@@ -171,17 +180,32 @@ const TABLE: &[(&str, &[u8], Expected)] = &[
         b"Content-Length: 5\r\n\r\nContent-Length: 6\r\n\r\n",
         Ok(Some(5)),
     ),
-    // a slice that begins at or after the end of a section with no fields (a whole message has its
-    // request line first, so its next message is not read)
+    // a request line is not a field line: this function does not read a whole head
+    (
+        "a value that ends like a request line",
+        b"Content-Length: 5 HTTP/1.1\r\n\r\n",
+        Err(Invalid),
+    ),
+    (
+        "a NUL in a request line",
+        b"G\x00T / HTTP/1.1\r\n\r\n",
+        Err(Invalid),
+    ),
+    (
+        "a request line with no version",
+        b"GET / HTTP/\r\n\r\n",
+        Err(Invalid),
+    ),
+    // anything else that starts with CRLF: after an empty line comes a body or the next message
     (
         "whole message, next message follows",
         b"GET / HTTP/1.1\r\n\r\nContent-Length: 5\r\n\r\n",
-        Ok(None),
+        Err(Invalid),
     ),
     (
         "whole message, next request follows",
         b"GET / HTTP/1.1\r\n\r\nGET /x HTTP/1.1\r\nContent-Length: 5\r\n\r\n",
-        Ok(None),
+        Err(Invalid),
     ),
     (
         "from the end of the request line",
@@ -415,4 +439,146 @@ fn the_input_of_the_fuzz_crash() {
 fn leading_zeros_do_not_overflow() {
     let many = format!("{}5", "0".repeat(100));
     assert_eq!(find_content_length(&field(&many)), Ok(Some(5)));
+}
+
+/// Method, target and version of a head, and the field section after it.
+type Head = (HttpMethod, &'static [u8], &'static [u8], &'static [u8]);
+
+fn split(head: &'static [u8]) -> Result<Head, HeadError> {
+    split_message_head(head).map(|(line, fields)| (line.method, line.path, line.version, fields))
+}
+
+const GET: HttpMethod = HttpMethod::Get;
+
+#[test]
+fn splitting_a_head() {
+    let good: &[(&[u8], Head)] = &[
+        (b"GET / HTTP/1.1\r\n\r\n", (GET, b"/", b"HTTP/1.1", b"\r\n")),
+        (
+            b"GET /a:b?c=d HTTP/1.0\r\nHost: a\r\n\r\n",
+            (GET, b"/a:b?c=d", b"HTTP/1.0", b"Host: a\r\n\r\n"),
+        ),
+        (
+            b"BREW / HTTP/9.9\r\n",
+            (HttpMethod::Unknown, b"/", b"HTTP/9.9", b""),
+        ),
+        (
+            b"POST * HTTP/1.1\r\nbody",
+            (HttpMethod::Post, b"*", b"HTTP/1.1", b"body"),
+        ),
+    ];
+    for (head, expected) in good {
+        assert_eq!(
+            split(head).as_ref(),
+            Ok(expected),
+            "{}",
+            String::from_utf8_lossy(head)
+        );
+    }
+    let bad: &[(&[u8], HeadError)] = &[
+        (b"", HeadError::Incomplete),
+        (b"GET / HTTP/1.1", HeadError::Incomplete),
+        (b"GET / HTTP/1.1\r", HeadError::Incomplete),
+        (b"\r\nGET / HTTP/1.1\r\n", HeadError::Invalid),
+        (b"\r\n", HeadError::Invalid),
+        (b"GET / HTTP/1.1\n", HeadError::Invalid),
+        (b"GET / HTTP/1.1\r\r\n", HeadError::Invalid),
+        (b"Content-Length: 5 HTTP/1.1\r\n", HeadError::Invalid),
+        (b"G\x00T / HTTP/1.1\r\n", HeadError::Invalid),
+        (b"GET / HTTP/\r\n", HeadError::Invalid),
+        (b"GET / HTTP/1\r\n", HeadError::Invalid),
+        (b"GET / HTTP/1.\r\n", HeadError::Invalid),
+        (b"GET / HTTP/1.1.1\r\n", HeadError::Invalid),
+        (b"GET / HTTP/a.b\r\n", HeadError::Invalid),
+        (b"GET / http/1.1\r\n", HeadError::Invalid),
+        (b"GET /\r\n", HeadError::Invalid),
+        (b"GET\r\n", HeadError::Invalid),
+        (b"GET  / HTTP/1.1\r\n", HeadError::Invalid),
+        (b"GET /  HTTP/1.1\r\n", HeadError::Invalid),
+        (b" GET / HTTP/1.1\r\n", HeadError::Invalid),
+        (b"GET / HTTP/1.1 \r\n", HeadError::Invalid),
+        (b"GET / x HTTP/1.1\r\n", HeadError::Invalid),
+        (b"GET /\x00 HTTP/1.1\r\n", HeadError::Invalid),
+        (b"GET /\t HTTP/1.1\r\n", HeadError::Invalid),
+        (b"GET\t/ HTTP/1.1\r\n", HeadError::Invalid),
+        (b" / HTTP/1.1\r\n", HeadError::Invalid),
+        (b"GET  HTTP/1.1\r\n", HeadError::Invalid),
+        (b"GET / HTTP/1.a\r\n", HeadError::Invalid),
+        (b"GET / HTTP/a.1\r\n", HeadError::Invalid),
+    ];
+    assert!(bad.len() >= 25, "compared {}", bad.len());
+    for (head, expected) in bad {
+        assert_eq!(
+            split(head).err(),
+            Some(*expected),
+            "{}",
+            String::from_utf8_lossy(head)
+        );
+    }
+}
+
+/// A whole buffer, the way a caller holds it: cut at the end of the head, then split, then read.
+fn through_the_head(buf: &[u8]) -> Expected {
+    let end = find_header_end(buf).ok_or(Incomplete)?;
+    let (_, fields) = split_message_head(&buf[..end]).map_err(|_| Invalid)?;
+    find_content_length(fields)
+}
+
+#[test]
+fn a_whole_buffer_through_the_head() {
+    let rows: &[(&str, &[u8], Expected)] = &[
+        ("no field", b"GET / HTTP/1.1\r\n\r\n", Ok(None)),
+        (
+            "field",
+            b"POST / HTTP/1.1\r\nContent-Length: 42\r\n\r\n",
+            Ok(Some(42)),
+        ),
+        (
+            "next message is not read",
+            b"GET / HTTP/1.1\r\n\r\nContent-Length: 5\r\n\r\n",
+            Ok(None),
+        ),
+        (
+            "next request is not read",
+            b"GET / HTTP/1.1\r\n\r\nGET /x HTTP/1.1\r\nContent-Length: 5\r\n\r\n",
+            Ok(None),
+        ),
+        (
+            "body is not read",
+            b"POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nContent-Length: 6\r\n\r\n",
+            Ok(Some(5)),
+        ),
+        (
+            "a value that ends like a request line",
+            b"POST / HTTP/1.1\r\nContent-Length: 5 HTTP/1.1\r\n\r\n",
+            Err(Invalid),
+        ),
+        (
+            "not a head",
+            b"Content-Length: 5 HTTP/1.1\r\n\r\n",
+            Err(Invalid),
+        ),
+        (
+            "a second request line among the fields",
+            b"GET / HTTP/1.1\r\nGET /x HTTP/1.1\r\n\r\n",
+            Err(Invalid),
+        ),
+        (
+            "folded onto the request line",
+            b"GET / HTTP/1.1\r\n Host: a\r\n\r\n",
+            Err(Invalid),
+        ),
+        (
+            "no end of the head",
+            b"GET / HTTP/1.1\r\nHost: a\r\n",
+            Err(Incomplete),
+        ),
+    ];
+    for (name, buf, expected) in rows {
+        assert_eq!(through_the_head(buf), *expected, "{name}");
+    }
+    // a slice cut after the request line is a field section
+    let buf = b"POST / HTTP/1.1\r\nContent-Length: 5 HTTP/1.1\r\n\r\n";
+    let (_, fields) = split_message_head(buf).unwrap();
+    assert_eq!(find_content_length(fields), Err(Invalid));
 }

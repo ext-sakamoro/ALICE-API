@@ -627,8 +627,8 @@ impl<const MAX_OPS: usize> BatchedForwarder<MAX_OPS> {
 
 // HTTP header parsing moved to `crate::http` (no_std, 2026-09-15); re-exported here for compatibility
 pub use crate::http::{
-    find_content_length, find_header_end, parse_request_line, ContentLengthError, HttpMethod,
-    RequestLine,
+    find_content_length, find_header_end, parse_request_line, split_message_head,
+    ContentLengthError, HeadError, HttpMethod, RequestLine,
 };
 
 #[cfg(test)]
