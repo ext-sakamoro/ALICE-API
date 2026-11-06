@@ -1,6 +1,6 @@
 # ALICE-API
 
-**High-Performance API Gateway with Distributed Rate Limiting** - v0.1.0 (Secure API Stack)
+**High-Performance API Gateway with Distributed Rate Limiting** - v0.2.0 (Secure API Stack)
 
 > "Fairness is not a bug, it's a feature."
 
@@ -107,7 +107,7 @@ When multiple clients compete for limited backend capacity:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        ALICE-API v0.1.0                              │
+│                        ALICE-API v0.2.0                              │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │   Client Request                                                     │

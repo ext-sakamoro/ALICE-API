@@ -39,6 +39,10 @@ jobs:
         run: cargo test
       - name: Test (native feature set)
         run: cargo test --features "$NATIVE_FEATURES"
+      # without overflow checks integer overflow wraps instead of panicking, so a parser's result
+      # can differ between the profiles
+      - name: Test (HTTP framing, release profile)
+        run: cargo test --release --test content_length
       - name: Test (all bridges, real siblings; at least 211 passed)
         run: |
           set -o pipefail

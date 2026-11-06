@@ -446,18 +446,15 @@ has_toolchain() { grep -q "^$1" <<<"$(rustup toolchain list)"; }
 #   - fuzz.yml:fuzz: uses ./.github/actions/alice-stubs (an action this file cannot run)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_parse_request_line] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_parse_request_line] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_parse_request_line] (continue-on-error, runner-only (open-ended or unprovable-bounded fuzz run))
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_parse_request_line] (its `if:` runs on what happened earlier on the runner)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_parse_request_line] (runner-only (open-ended or unprovable-bounded fuzz run))
 #   - fuzz.yml:fuzz: uses ./.github/actions/alice-stubs (an action this file cannot run)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_find_content_length] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_find_content_length] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_find_content_length] (continue-on-error, runner-only (open-ended or unprovable-bounded fuzz run))
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_find_content_length] (its `if:` runs on what happened earlier on the runner)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_find_content_length] (runner-only (open-ended or unprovable-bounded fuzz run))
 #   - fuzz.yml:fuzz: uses ./.github/actions/alice-stubs (an action this file cannot run)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_route_match] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_route_match] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_route_match] (continue-on-error, runner-only (open-ended or unprovable-bounded fuzz run))
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_route_match] (its `if:` runs on what happened earlier on the runner)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_route_match] (runner-only (open-ended or unprovable-bounded fuzz run))
 #   - fuzz.yml:gate:gate (reads NEEDS, a value only the runner has)
 
 need actionlint "brew install actionlint"
@@ -708,6 +705,12 @@ step "ci.yml / test: Test (native feature set)"
 (
   gh_step ci.yml.test
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,ffi" BRIDGE_FEATURES="std,ffi,secure,queue,analytics"; cargo test --features "$NATIVE_FEATURES" )
+)
+
+step "ci.yml / test: Test (HTTP framing, release profile)"
+(
+  gh_step ci.yml.test
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,ffi" BRIDGE_FEATURES="std,ffi,secure,queue,analytics"; cargo test --release --test content_length )
 )
 
 step "security-audit.yml / audit: Run cargo audit"

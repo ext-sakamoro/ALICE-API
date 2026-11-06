@@ -148,7 +148,8 @@ pub mod prelude {
     };
     pub use crate::gcra::{GcraCell, GcraDecision, GcraRegistry};
     pub use crate::http::{
-        find_content_length, find_header_end, parse_request_line, HttpMethod, RequestLine,
+        find_content_length, find_header_end, parse_request_line, ContentLengthError, HttpMethod,
+        RequestLine,
     };
     #[cfg(feature = "std")]
     pub use crate::routing::{
@@ -281,7 +282,7 @@ mod tests {
 
         let header_end = find_header_end(buf).unwrap();
         let headers = &buf[..header_end];
-        assert_eq!(find_content_length(headers), Some(42));
+        assert_eq!(find_content_length(headers), Ok(Some(42)));
     }
 
     #[test]

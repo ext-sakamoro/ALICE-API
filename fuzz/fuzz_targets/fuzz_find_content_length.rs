@@ -10,11 +10,11 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    // find_content_length must never panic
-    if let Some(len) = find_content_length(data) {
-        // Sanity: returned length should be a reasonable value
-        // (no assertion on max — we just want to catch panics)
-        let _ = len;
+    // find_content_length has a defined result for every input; a slice cut after the header end
+    // has the same result as the whole input, since nothing after that line is read
+    let whole = find_content_length(data);
+    if let Some(end) = find_header_end(data) {
+        assert_eq!(find_content_length(&data[..end]), whole);
     }
 
     // find_header_end must never panic

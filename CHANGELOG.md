@@ -4,8 +4,16 @@ All notable changes to ALICE-API will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-06
+
+### Security
+- **`http::find_content_length` が桁あふれする値で誤った長さを返していた** — `value * 10 + digit` は overflow check の無い release で wrap し、`Content-Length: 18446744073709551617` を 1 と読んだ (check のある build では panic) body の長さを誤ると 1 つの接続の中で message の区切りが相手とずれる この crate の中に呼び出し元は無い 値の検査に加え、次も RFC 9110 / 9112 どおりに直した: 行頭の field 名だけを見る (他の値や body の中を読まない) / 大文字小文字を問わない / 値は `1*DIGIT` のみ (`12abc` `-5` `+5` 空を読まない) / 重複は値が同じでも拒否 / CRLF 以外の改行・折り返し・colon の前の空白・field 行の形でない行・先頭の空行を拒否 (`\r\n` だけの入力は field 0 本) `parse_request_line` が返す offset は request line の行末で、doc の名前を直した
+
 ### Changed
 - CI: `security-audit.yml` の semver-checks が 1 度も比較できていなかった (空の sibling で rustdoc の build が失敗し、`|| true` と job の `continue-on-error` で success) 本物の sibling で、repo の隣に置いた baseline と比べ、比較した check が 0 件なら fail にし、`continue-on-error` と `|| true` を外した
+- **Breaking**: `find_content_length` の戻り値を `Result<Option<usize>, ContentLengthError>` に変えた `Ok(None)` は field が無い場合だけで、不正・桁あふれ・重複・ヘッダ未完は `Err` (`None` のままだと呼び出し側が「body なし」と読むため) `Transfer-Encoding` はこの関数の外で扱う cargo-semver-checks はこの変更を検出しないので版は手で上げた
+- CI: `fuzz.yml` の `Run fuzz target` の `continue-on-error` を外し、crash で job を red にする artifact は残す
+- CI: `ci.yml` に `cargo test --release --test content_length` を足した
 - Licence: `AGPL-3.0 OR LicenseRef-Commercial` → `LicenseRef-Proprietary`
 - CI: ci.yml / fuzz.yml を `ci/**` の branch でも走らせ、ci.yml に手動実行を足し、main の run は打ち切らない concurrency にした (main に入れる前に branch で全 workflow を通すため)
 - CI: cargo deny の検査の前に、cargo deny が解いた crate の graph (json) がこの crate と固定した sibling を全て含み、解決した package 数を超えないことを `scripts/deny_graph_guard.py` で確かめる (試験 `scripts/test_deny_graph_guard.py`: 空の graph・この crate や sibling の欠け・解決より多い・空の解決は失敗) 以前は license ごとの行数を数えていた
@@ -24,6 +32,8 @@ All notable changes to ALICE-API will be documented in this file.
 - `ci.yml`: fmt + actionlint のみ → test / clippy (default / `std,ffi` / 全 bridge = real sibling 4 crate を `alice-siblings` action で clone) / `no_std` job (host + `aarch64-unknown-none` + clippy) / `feature-powerset` (std 固定 depth 2) / doc `-D warnings`、rust-cache、`rust-toolchain.toml` に aarch64-unknown-none target
 
 ## [0.1.1] - 2026-03-04
+
+`Cargo.toml` の version は 0.1.0 のままで、0.1.1 になった commit も tag も無い この節は e37cc00 の FFI と binding の記録
 
 ### Added
 - `ffi` — 20 `extern "C"` FFI functions (GcraCell, Gateway, SFQ)
