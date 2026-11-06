@@ -4,6 +4,9 @@ All notable changes to ALICE-API will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- 変異試験の script に時間制限を入れた 時間を超えた変異は process group ごと止めて red に数える
+
 ## [0.2.0] - 2026-11-06
 
 ### Security
