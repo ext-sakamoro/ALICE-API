@@ -236,22 +236,19 @@ jobs:
           retention-days: 30
 
   semver-checks:
-    name: cargo-semver-checks (API compat、informational)
+    name: cargo-semver-checks (API compat)
     needs: changes
     if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
-    # ALICE-API は publish = false (private crate) のため crates.io baseline なし
-    # git baseline (main~1) で比較、informational only
-    continue-on-error: true
+    # publish = false なので crates.io の baseline は無い 比較先は main との分岐点 (main の上では 1 つ前の commit)
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0  # baseline-rev 比較のため full history 必要
+          fetch-depth: 0  # baseline の commit に届くため
+      - name: Checkout ALICE-* siblings (real crates)
+        uses: ./.github/actions/alice-siblings
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-
-      - name: Create ALICE optional bridge stubs
-        uses: ./.github/actions/alice-stubs
 
       # version 明示 pin: `@latest` は rustc MSRV を追いかける (0.50.0 = 1.93+) ので、
       # rust-toolchain.toml の pin が遅れると赤になる (2026-09-14 事案) toolchain と
@@ -261,11 +258,18 @@ jobs:
         with:
           tool: cargo-semver-checks@0.50.0
 
-      # publish=false のため --baseline-rev で git 経由の比較
-      # main の直前 commit と比較 (informational、break あっても block しない)
+      # baseline は repo の隣に置く: ../ALICE-* の path 依存が解ける場所でないと build できない
+      # (--baseline-rev は target/ の下に展開するので解けない)
+      # 比較した check の数が 0 なら fail: build できずに何も比べなかった run を通さない
       - name: Run cargo semver-checks
         run: |
-          cargo semver-checks check-release \
-            --package alice-api \
-            --baseline-rev "HEAD~1" \
-            || true
+          set -o pipefail
+          base=$(git merge-base origin/main HEAD)
+          if [ "$base" = "$(git rev-parse HEAD)" ]; then base=$(git rev-parse HEAD~1); fi
+          baseline="../baseline-api-$$"
+          log=$(mktemp)
+          git worktree add -q --detach "$baseline" "$base"
+          trap 'git worktree remove --force "$baseline"' EXIT
+          cargo semver-checks check-release --package alice-api --baseline-root "$baseline" 2>&1 | tee "$log"
+          python3 -c 'import re, sys; t = re.sub(r"\x1b\[[0-9;]*m", "", open(sys.argv[1]).read()); m = re.search(r"Checked \[.*?\] (\d+) checks: (\d+) pass", t); n = int(m.group(1)) if m else 0; print(f"semver-checks: {n} checks compared"); sys.exit(0 if n > 0 else 1)' "$log"
+

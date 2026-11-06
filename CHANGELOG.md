@@ -5,6 +5,7 @@ All notable changes to ALICE-API will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- CI: `security-audit.yml` の semver-checks が 1 度も比較できていなかった (空の sibling で rustdoc の build が失敗し、`|| true` と job の `continue-on-error` で success) 本物の sibling で、repo の隣に置いた baseline と比べ、比較した check が 0 件なら fail にし、`continue-on-error` と `|| true` を外した
 - Licence: `AGPL-3.0 OR LicenseRef-Commercial` → `LicenseRef-Proprietary`
 - CI: ci.yml / fuzz.yml を `ci/**` の branch でも走らせ、ci.yml に手動実行を足し、main の run は打ち切らない concurrency にした (main に入れる前に branch で全 workflow を通すため)
 - CI: cargo deny の検査の前に、cargo deny が解いた crate の graph (json) がこの crate と固定した sibling を全て含み、解決した package 数を超えないことを `scripts/deny_graph_guard.py` で確かめる (試験 `scripts/test_deny_graph_guard.py`: 空の graph・この crate や sibling の欠け・解決より多い・空の解決は失敗) 以前は license ごとの行数を数えていた
