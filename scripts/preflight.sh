@@ -679,11 +679,12 @@ step "security-audit.yml / audit: Resolve"
   n=$(grep -c '^name = ' Cargo.lock)
   echo "resolved ${n} packages"
   # every ALICE crate the manifest takes by git (branch main) is in the resolve
+  # (the manifest is read as TOML, so the order of a dependency's keys does not matter)
   pinned=0
   while read -r name; do
     pinned=$((pinned + 1))
     grep -q "^name = \"${name}\"" Cargo.lock || { echo "::error::${name} is not in the resolve"; exit 1; }
-  done < <(grep -oE '^alice-[a-z0-9-]+ = \{ git = ' Cargo.toml | cut -d' ' -f1)
+  done < <(python3 -c 'import tomllib; d = tomllib.load(open("Cargo.toml", "rb")).get("dependencies", {}); print("\n".join(n for n, s in d.items() if n.startswith("alice-") and isinstance(s, dict) and "git" in s))')
   [ "${pinned}" -gt 0 ] || { echo "::error::Cargo.toml takes no alice-* crate by git"; exit 1; }
   [ "${n}" -gt 1 ] || { echo "::error::resolved ${n} packages"; exit 1; }
 )
