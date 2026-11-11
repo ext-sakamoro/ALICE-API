@@ -5,6 +5,7 @@ All notable changes to ALICE-API will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- alice-auth / alice-crypto / alice-queue / alice-analytics を git の branch main + version で引く CI の sibling の checkout と stub をやめ、全 job が実物を解決して build する deny_graph_guard は git の rev と branch の両方を読み、解決がその branch から取ったかを見る
 - 変異試験の script に時間制限を入れた 時間を超えた変異は process group ごと止めて red に数える
 
 ## [0.2.0] - 2026-11-06

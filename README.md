@@ -483,7 +483,7 @@ cargo bench
 
 ## Secure API Stack (Optional)
 
-ALICE-API integrates with [ALICE-Auth](../ALICE-Auth) and [ALICE-Crypto](../ALICE-Crypto) via optional feature flags to create an end-to-end secure gateway pipeline.
+ALICE-API integrates with [ALICE-Auth](https://github.com/ext-sakamoro/ALICE-Auth) and [ALICE-Crypto](https://github.com/ext-sakamoro/ALICE-Crypto) via optional feature flags to create an end-to-end secure gateway pipeline.
 
 ```
 Client Request → GCRA Rate Limit → Ed25519 Auth → XChaCha20 Decrypt → Backend
